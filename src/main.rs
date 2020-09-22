@@ -3,6 +3,10 @@ mod error;
 
 use async_std::{fs, task};
 use bytes::BytesMut;
+use ckb_types::{
+    packed::ScriptBuilder,
+    prelude::{Builder, Pack},
+};
 use clap::{App, AppSettings, Arg, SubCommand};
 use config::Config;
 use error::{Error, Result};
@@ -87,6 +91,12 @@ async fn run() -> Result<()> {
                 args.extend_from_slice(aggregator.as_bytes());
             }
             println!("Args: 0x{:#x}", args);
+            let script = ScriptBuilder::default()
+                .code_hash(config.lock.binary.code_hash.pack())
+                .hash_type(config.lock.binary.core_hash_type().into())
+                .args(args.freeze().pack())
+                .build();
+            println!("Molecule serialized script: {:#x}", script);
         }
         ("run", _) => unimplemented!(),
         (command, _) => {
