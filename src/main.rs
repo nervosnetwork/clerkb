@@ -3,6 +3,7 @@ mod error;
 
 use async_std::{fs, task};
 use bytes::BytesMut;
+use ckb_jsonrpc_types::Script;
 use ckb_types::{
     packed::ScriptBuilder,
     prelude::{Builder, Pack},
@@ -97,6 +98,11 @@ async fn run() -> Result<()> {
                 .args(args.freeze().pack())
                 .build();
             println!("Molecule serialized script: {:#x}", script);
+            let json_script: Script = script.into();
+            println!(
+                "JSON serialized script: {}",
+                serde_json::to_string_pretty(&json_script).unwrap()
+            );
         }
         ("run", _) => unimplemented!(),
         (command, _) => {
