@@ -9,7 +9,7 @@ use ckb_types::{
     prelude::{Builder, Pack},
 };
 use clap::{App, AppSettings, Arg, SubCommand};
-use config::Config;
+use config::{Config, IntervalType};
 use error::{Error, Result};
 use std::process::exit;
 
@@ -86,7 +86,11 @@ async fn run() -> Result<()> {
             args.extend_from_slice(&[config.lock.verification_library.hash_type]);
             args.extend_from_slice(&[config.lock.identity_size]);
             args.extend_from_slice(&(config.lock.aggregators.len() as u16).to_le_bytes()[..]);
-            args.extend_from_slice(&config.lock.block_interval_seconds.to_le_bytes()[..]);
+            let block_intervals: u32 = match config.lock.interval_type {
+                IntervalType::Blocks => config.lock.block_intervals as u32,
+                IntervalType::Seconds => (config.lock.block_intervals as u32) | 0x80000000,
+            };
+            args.extend_from_slice(&block_intervals.to_le_bytes()[..]);
             args.extend_from_slice(&config.lock.data_info_offset.to_le_bytes()[..]);
             for aggregator in &config.lock.aggregators {
                 args.extend_from_slice(aggregator.as_bytes());

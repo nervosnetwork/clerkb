@@ -42,9 +42,16 @@ impl ScriptConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum IntervalType {
+    Blocks,
+    Seconds,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Lock {
     pub identity_size: u8,
-    pub block_interval_seconds: u32,
+    pub block_intervals: u16,
+    pub interval_type: IntervalType,
     pub data_info_offset: u32,
     pub aggregators: Vec<JsonBytes>,
     pub binary: ScriptConfig,
