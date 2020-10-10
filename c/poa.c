@@ -96,8 +96,8 @@ int validate_signature(const uint8_t *code_hash, uint8_t hash_type,
   blake2b_final(message_ctx, message, 32);
 
   void *handle = NULL;
-  int ret = ckb_dlopen2(code_hash, hash_type, code_buffer, CODE_SIZE, &handle,
-                        &consumed_size);
+  int ret = ckb_dlopen2(code_hash, hash_type, code_buffer,
+                        CODE_SIZE - consumed_size, &handle, &consumed_size);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
