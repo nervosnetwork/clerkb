@@ -48,6 +48,52 @@
 #define DEBUG(s)
 #endif /* ENABLE_DEBUG_MODE */
 
+typedef struct {
+  const uint8_t *_source_data;
+  size_t _source_length;
+
+  const uint8_t *code_hash;
+  uint8_t hash_type;
+  int interval_uses_seconds;
+  uint8_t identity_size;
+  uint8_t aggregator_number;
+  uint8_t aggregator_change_threshold;
+  uint32_t subblock_intervals;
+  uint32_t subblocks_per_interval;
+  const uint8_t *identities;
+} PoAData;
+
+int parse_poa_data(const uint8_t *source_data, size_t source_length,
+                   PoAData *output) {
+  if (source_length < 44) {
+    DEBUG("PoA data have invalid length!");
+    return ERROR_ENCODING;
+  }
+  output->_source_data = source_data;
+  output->_source_length = source_length;
+
+  output->code_hash = source_data;
+  output->hash_type = source_data[32] & 1;
+  output->interval_uses_seconds = ((source_data[32] >> 1) & 1) == 1;
+  output->identity_size = source_data[33];
+  output->aggregator_number = source_data[34];
+  output->aggregator_change_threshold = source_data[35];
+  output->subblock_intervals = *((uint32_t *)(&source_data[36]));
+  output->subblocks_per_interval = *((uint32_t *)(&source_data[40]));
+  output->identities = &source_data[44];
+
+  if (output->aggregator_change_threshold > output->aggregator_number) {
+    DEBUG("Invalid aggregator change threshold!");
+    return ERROR_ENCODING;
+  }
+  if (source_length !=
+      44 + (size_t)output->identity_size * (size_t)output->aggregator_number) {
+    DEBUG("PoA data have invalid length!");
+    return ERROR_ENCODING;
+  }
+  return CKB_SUCCESS;
+}
+
 int load_and_hash_witness(blake2b_state *ctx, size_t start, size_t index,
                           size_t source) {
   uint8_t temp[ONE_BATCH_SIZE];
@@ -345,9 +391,9 @@ int main() {
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  uint8_t input_poa_data[POA_BUFFER_SIZE];
+  uint8_t input_poa_data_buffer[POA_BUFFER_SIZE];
   uint64_t input_poa_len = POA_BUFFER_SIZE;
-  ret = ckb_load_cell_data(input_poa_data, &input_poa_len, 0,
+  ret = ckb_load_cell_data(input_poa_data_buffer, &input_poa_len, 0,
                            input_poa_cell_index, CKB_SOURCE_INPUT);
   if (ret != CKB_SUCCESS) {
     return ret;
@@ -367,9 +413,9 @@ int main() {
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  uint8_t output_poa_data[POA_BUFFER_SIZE];
+  uint8_t output_poa_data_buffer[POA_BUFFER_SIZE];
   uint64_t output_poa_len = POA_BUFFER_SIZE;
-  ret = ckb_load_cell_data(output_poa_data, &output_poa_len, 0,
+  ret = ckb_load_cell_data(output_poa_data_buffer, &output_poa_len, 0,
                            output_poa_cell_index, CKB_SOURCE_OUTPUT);
   if (ret != CKB_SUCCESS) {
     return ret;
@@ -383,48 +429,40 @@ int main() {
     return ERROR_ENCODING;
   }
 
-  const uint8_t *poa_data = &input_poa_data[22];
-  const size_t poa_data_length = input_poa_len - 22;
-  const uint8_t *last_subblock_info = input_poa_data;
-  const uint8_t *current_subblock_info = output_poa_data;
-
-  const uint8_t *code_hash = poa_data;
-  uint8_t hash_type = poa_data[32] & 1;
-  int interval_uses_seconds = ((poa_data[32] >> 1) & 1) == 1;
-  uint8_t identity_size = poa_data[33];
-  uint8_t aggregator_number = poa_data[34];
-  uint8_t aggregator_change_threshold = poa_data[35];
-  uint32_t subblock_intervals = *((uint32_t *)(&poa_data[36]));
-  uint32_t subblocks_per_interval = *((uint32_t *)(&poa_data[40]));
-  if (aggregator_change_threshold > aggregator_number) {
-    DEBUG("Invalid aggregator change threshold!");
-    return ERROR_ENCODING;
+  PoAData poa_data;
+  ret =
+      parse_poa_data(&input_poa_data_buffer[22], input_poa_len - 22, &poa_data);
+  if (ret != CKB_SUCCESS) {
+    return ret;
   }
-  if (poa_data_length !=
-      44 + (size_t)identity_size * (size_t)aggregator_number) {
-    DEBUG("PoA data have invalid length!");
-    return ERROR_ENCODING;
-  }
+  const uint8_t *last_subblock_info = input_poa_data_buffer;
+  const uint8_t *current_subblock_info = output_poa_data_buffer;
 
-  ret = initialize_signature_library(code_hash, hash_type);
+  ret = initialize_signature_library(poa_data.code_hash, poa_data.hash_type);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
 
   if ((input_poa_len != output_poa_len) ||
-      (memcmp(&input_poa_data[22], &output_poa_data[22], input_poa_len - 22) !=
-       0)) {
-    // TODO: validate output PoA data
+      (memcmp(&input_poa_data_buffer[22], &output_poa_data_buffer[22],
+              input_poa_len - 22) != 0)) {
+    PoAData new_poa_data;
+    ret = parse_poa_data(&output_poa_data_buffer[22], output_poa_len - 22,
+                         &new_poa_data);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
     size_t single_signature_size =
-        signature_size / (size_t)aggregator_change_threshold;
-    if ((size_t)aggregator_change_threshold * single_signature_size !=
+        signature_size / (size_t)poa_data.aggregator_change_threshold;
+    if ((size_t)poa_data.aggregator_change_threshold * single_signature_size !=
         signature_size) {
       DEBUG("Invalid signature length!");
       return ERROR_ENCODING;
     }
     return validate_signatures(signature, single_signature_size,
-                               aggregator_change_threshold, &poa_data[44],
-                               identity_size, aggregator_number, message);
+                               poa_data.aggregator_change_threshold,
+                               poa_data.identities, poa_data.identity_size,
+                               poa_data.aggregator_number, message);
   }
 
   // Check that current aggregator is indeed due to issuing new block.
@@ -439,7 +477,7 @@ int main() {
   uint32_t current_subblock_index = *((uint32_t *)(&current_subblock_info[16]));
   uint16_t current_aggregator_index =
       *((uint16_t *)(&current_subblock_info[20]));
-  if (current_aggregator_index >= aggregator_number) {
+  if (current_aggregator_index >= poa_data.aggregator_number) {
     DEBUG("Invalid aggregator index!");
     return ERROR_ENCODING;
   }
@@ -456,7 +494,7 @@ int main() {
     DEBUG("Invalid loading since!");
     return ERROR_ENCODING;
   }
-  if (interval_uses_seconds) {
+  if (poa_data.interval_uses_seconds) {
     if (since >> 56 != 0x40) {
       DEBUG("PoA requires absolute timestamp since!");
       return ERROR_ENCODING;
@@ -478,7 +516,7 @@ int main() {
   // subblock_intervals requirement is met.
   // 2. When the subblock_intervals duration has passed, the next aggregator
   // should now be able to issue more blocks.
-  if (since < last_round_initial_subtime + subblock_intervals) {
+  if (since < last_round_initial_subtime + poa_data.subblock_intervals) {
     // Current aggregator is issuing blocks
     if (current_round_initial_subtime != last_round_initial_subtime) {
       DEBUG("Invalid current round first timestamp!");
@@ -494,7 +532,7 @@ int main() {
       return ERROR_ENCODING;
     }
     if ((current_subblock_index != last_block_index + 1) ||
-        (current_subblock_index >= subblocks_per_interval)) {
+        (current_subblock_index >= poa_data.subblocks_per_interval)) {
       DEBUG("Invalid block index");
       return ERROR_ENCODING;
     }
@@ -508,11 +546,11 @@ int main() {
       return ERROR_ENCODING;
     }
     // Next aggregator in place
-    uint64_t duration =
-        (((uint64_t)current_aggregator_index + (uint64_t)aggregator_number -
-          (uint64_t)last_aggregator_index) %
-         (uint64_t)aggregator_number) *
-        ((uint64_t)subblock_intervals);
+    uint64_t duration = (((uint64_t)current_aggregator_index +
+                          (uint64_t)poa_data.aggregator_number -
+                          (uint64_t)last_aggregator_index) %
+                         (uint64_t)poa_data.aggregator_number) *
+                        ((uint64_t)poa_data.subblock_intervals);
     if (since < duration + last_round_initial_subtime) {
       DEBUG("Invalid time!");
       return ERROR_ENCODING;
@@ -521,6 +559,7 @@ int main() {
 
   return validate_signature(
       signature, signature_size,
-      &poa_data[44 + current_aggregator_index * identity_size], identity_size,
-      message);
+      &poa_data.identities[(size_t)current_aggregator_index *
+                           (size_t)poa_data.identity_size],
+      poa_data.identity_size, message);
 }
