@@ -75,38 +75,15 @@ int load_and_hash_witness(blake2b_state *ctx, size_t start, size_t index,
 
 uint8_t code_buffer[CODE_SIZE] __attribute__((aligned(RISCV_PGSIZE)));
 uint64_t consumed_size = 0;
+uint8_t prefilled_data_buffer[PREFILLED_DATA_SIZE];
+int (*verify_func)(void *, const uint8_t *, size_t, const uint8_t *, size_t,
+                   uint8_t *, size_t *) = NULL;
 
-int validate_signature(const uint8_t *code_hash, uint8_t hash_type,
-                       const uint8_t *signature, size_t signature_size,
-                       const uint8_t *identity, size_t identity_size,
-                       blake2b_state *message_ctx) {
-  // Digest same group witnesses
-  size_t i = 1;
-  while (1) {
-    int ret = load_and_hash_witness(message_ctx, 0, i, CKB_SOURCE_GROUP_INPUT);
-    if (ret == CKB_INDEX_OUT_OF_BOUND) {
-      break;
-    }
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-    i += 1;
+int initialize_signature_library(const uint8_t *code_hash, uint8_t hash_type) {
+  if (verify_func != NULL) {
+    DEBUG("Signature library already initialized!");
+    return ERROR_DYNAMIC_LOADING;
   }
-  // Digest witnesses that not covered by inputs
-  i = ckb_calculate_inputs_len();
-  while (1) {
-    int ret = load_and_hash_witness(message_ctx, 0, i, CKB_SOURCE_INPUT);
-    if (ret == CKB_INDEX_OUT_OF_BOUND) {
-      break;
-    }
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-    i += 1;
-  }
-  uint8_t message[32];
-  blake2b_final(message_ctx, message, 32);
-
   void *handle = NULL;
   int ret = ckb_dlopen2(code_hash, hash_type, code_buffer,
                         CODE_SIZE - consumed_size, &handle, &consumed_size);
@@ -120,24 +97,76 @@ int validate_signature(const uint8_t *code_hash, uint8_t hash_type,
     DEBUG("Error loading load prefilled data func!");
     return ERROR_DYNAMIC_LOADING;
   }
-  int (*verify_func)(void *, const uint8_t *, size_t, const uint8_t *, size_t,
-                     uint8_t *, size_t *);
-  *(void **)(&verify_func) = ckb_dlsym(handle, "validate_signature");
-  if (verify_func == NULL) {
-    DEBUG("Error loading validate signature func!");
-    return ERROR_DYNAMIC_LOADING;
-  }
-  uint8_t prefilled_data_buffer[PREFILLED_DATA_SIZE];
   uint64_t len = PREFILLED_DATA_SIZE;
   ret = load_prefilled_data_func(prefilled_data_buffer, &len);
   if (ret != CKB_SUCCESS) {
     DEBUG("Error loading prefilled data!");
     return ret;
   }
+  *(void **)(&verify_func) = ckb_dlsym(handle, "validate_signature");
+  if (verify_func == NULL) {
+    DEBUG("Error loading validate signature func!");
+    return ERROR_DYNAMIC_LOADING;
+  }
+  return CKB_SUCCESS;
+}
+
+int validate_signatures(const uint8_t *signatures, size_t signature_size,
+                        uint8_t signature_count, const uint8_t *identity_buffer,
+                        size_t identity_size, uint8_t identity_count,
+                        const uint8_t message[32]) {
+  if (verify_func == NULL) {
+    DEBUG("Signature library is not initialized!");
+    return ERROR_DYNAMIC_LOADING;
+  }
+  uint64_t mask[4];
+  mask[0] = mask[1] = mask[2] = mask[3] = 0;
+  for (uint8_t i = 0; i < signature_count; i++) {
+    uint8_t output_identity[IDENTITY_SIZE];
+    uint64_t len = IDENTITY_SIZE;
+    int ret =
+        verify_func(prefilled_data_buffer, &signatures[i * signature_size],
+                    signature_size, message, 32, output_identity, &len);
+    if (ret != CKB_SUCCESS) {
+      DEBUG("Error validating signature");
+      return ret;
+    }
+    if (len != identity_size) {
+      DEBUG("Identity size does not match!");
+      return ERROR_ENCODING;
+    }
+    uint8_t found_identity = 0;
+    for (; found_identity < identity_count; found_identity++) {
+      if (memcmp(output_identity,
+                 &identity_buffer[found_identity * identity_size],
+                 identity_size) == 0) {
+        break;
+      }
+    }
+    if (found_identity >= identity_count) {
+      DEBUG("Signature does not match any identity!");
+      return ERROR_ENCODING;
+    }
+    if (((mask[found_identity / 64] >> (found_identity % 64)) & 1) != 0) {
+      DEBUG("Multiple signature comes from one identity!");
+      return ERROR_ENCODING;
+    }
+    mask[found_identity / 64] |= 1 << (found_identity % 64);
+  }
+  return CKB_SUCCESS;
+}
+
+int validate_signature(const uint8_t *signature, size_t signature_size,
+                       const uint8_t *identity, size_t identity_size,
+                       const uint8_t message[32]) {
+  if (verify_func == NULL) {
+    DEBUG("Signature library is not initialized!");
+    return ERROR_DYNAMIC_LOADING;
+  }
   uint8_t output_identity[IDENTITY_SIZE];
-  len = IDENTITY_SIZE;
-  ret = verify_func(prefilled_data_buffer, signature, signature_size, message,
-                    32, output_identity, &len);
+  uint64_t len = IDENTITY_SIZE;
+  int ret = verify_func(prefilled_data_buffer, signature, signature_size,
+                        message, 32, output_identity, &len);
   if (ret != CKB_SUCCESS) {
     DEBUG("Error validating signature");
     return ret;
@@ -208,6 +237,86 @@ int main() {
     return ERROR_TRANSACTION;
   }
 
+  // Extract signature(s) from the first witness
+  uint8_t witness[SIGNATURE_WITNESS_BUFFER_SIZE];
+  len = SIGNATURE_WITNESS_BUFFER_SIZE;
+  ret = ckb_load_witness(witness, &len, 0, 0, CKB_SOURCE_GROUP_INPUT);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  size_t readed_len = len;
+  if (readed_len > SIGNATURE_WITNESS_BUFFER_SIZE) {
+    readed_len = SIGNATURE_WITNESS_BUFFER_SIZE;
+  }
+  // Assuming the witness is in WitnessArgs structure, we are doing some
+  // shortcuts here to support bigger witness.
+  if (readed_len < 20) {
+    DEBUG("Invalid witness length!");
+    return ERROR_ENCODING;
+  }
+  uint32_t lock_length = *((uint32_t *)(&witness[16]));
+  if (readed_len < 20 + lock_length) {
+    DEBUG("Witness lock part is far tooooo long!");
+    return ERROR_ENCODING;
+  }
+  // The lock field in WitnessArgs for current PoA script, contains a variable
+  // length signature.
+  const uint8_t *signature = &witness[20];
+  size_t signature_size = lock_length;
+  size_t remaining_offset = 20 + lock_length;
+
+  // Prepare signing message for signature validation.
+  // Different from our current scripts, this PoA script will actually skip
+  // the signature part when hashing for signing message, instead of filling
+  // the signature with all zeros.
+  uint8_t message[32];
+  {
+    blake2b_state message_ctx;
+    blake2b_init(&message_ctx, 32);
+    blake2b_update(&message_ctx, witness, 22);
+    // If we have loaded some witness parts that are after the signature, we
+    // will try to use them.
+    if (remaining_offset < readed_len) {
+      blake2b_update(&message_ctx, &witness[remaining_offset],
+                     readed_len - remaining_offset);
+      remaining_offset = readed_len;
+    }
+    if (remaining_offset < len) {
+      ret = load_and_hash_witness(&message_ctx, remaining_offset, 0,
+                                  CKB_SOURCE_GROUP_INPUT);
+      if (ret != CKB_SUCCESS) {
+        return ret;
+      }
+    }
+    // Digest same group witnesses
+    size_t i = 1;
+    while (1) {
+      int ret =
+          load_and_hash_witness(&message_ctx, 0, i, CKB_SOURCE_GROUP_INPUT);
+      if (ret == CKB_INDEX_OUT_OF_BOUND) {
+        break;
+      }
+      if (ret != CKB_SUCCESS) {
+        return ret;
+      }
+      i += 1;
+    }
+    // Digest witnesses that not covered by inputs
+    i = ckb_calculate_inputs_len();
+    while (1) {
+      int ret = load_and_hash_witness(&message_ctx, 0, i, CKB_SOURCE_INPUT);
+      if (ret == CKB_INDEX_OUT_OF_BOUND) {
+        break;
+      }
+      if (ret != CKB_SUCCESS) {
+        return ret;
+      }
+      i += 1;
+    }
+    blake2b_final(&message_ctx, message, 32);
+  }
+
+  // Load current script so as to extract PoA cell information
   unsigned char script[SCRIPT_BUFFER_SIZE];
   len = SCRIPT_BUFFER_SIZE;
   ret = ckb_checked_load_script(script, &len, 0);
@@ -274,61 +383,49 @@ int main() {
     return ERROR_ENCODING;
   }
 
-  if ((input_poa_len != output_poa_len) ||
-      (memcmp(&input_poa_data[22], &output_poa_data[22], input_poa_len - 22) !=
-       0)) {
-    // TODO: implement PoA parameter updation, this should require signatures
-    // from most validators.
-    DEBUG("TODO: implement PoA parameter updation!");
-    return 123;
-  }
-
   const uint8_t *poa_data = &input_poa_data[22];
   const size_t poa_data_length = input_poa_len - 22;
   const uint8_t *last_subblock_info = input_poa_data;
   const uint8_t *current_subblock_info = output_poa_data;
 
   const uint8_t *code_hash = poa_data;
-  uint8_t hash_type = poa_data[32];
+  uint8_t hash_type = poa_data[32] & 1;
+  int interval_uses_seconds = ((poa_data[32] >> 1) & 1) == 1;
   uint8_t identity_size = poa_data[33];
   uint8_t aggregator_number = poa_data[34];
-  int interval_uses_seconds = poa_data[35] == 1;
+  uint8_t aggregator_change_threshold = poa_data[35];
   uint32_t subblock_intervals = *((uint32_t *)(&poa_data[36]));
   uint32_t subblocks_per_interval = *((uint32_t *)(&poa_data[40]));
+  if (aggregator_change_threshold > aggregator_number) {
+    DEBUG("Invalid aggregator change threshold!");
+    return ERROR_ENCODING;
+  }
   if (poa_data_length !=
       44 + (size_t)identity_size * (size_t)aggregator_number) {
     DEBUG("PoA data have invalid length!");
     return ERROR_ENCODING;
   }
 
-  // Extract current aggregator index together with signature from the first
-  // witness
-  uint8_t witness[SIGNATURE_WITNESS_BUFFER_SIZE];
-  len = SIGNATURE_WITNESS_BUFFER_SIZE;
-  ret = ckb_load_witness(witness, &len, 0, 0, CKB_SOURCE_GROUP_INPUT);
+  ret = initialize_signature_library(code_hash, hash_type);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  size_t readed_len = len;
-  if (readed_len > SIGNATURE_WITNESS_BUFFER_SIZE) {
-    readed_len = SIGNATURE_WITNESS_BUFFER_SIZE;
+
+  if ((input_poa_len != output_poa_len) ||
+      (memcmp(&input_poa_data[22], &output_poa_data[22], input_poa_len - 22) !=
+       0)) {
+    // TODO: validate output PoA data
+    size_t single_signature_size =
+        signature_size / (size_t)aggregator_change_threshold;
+    if ((size_t)aggregator_change_threshold * single_signature_size !=
+        signature_size) {
+      DEBUG("Invalid signature length!");
+      return ERROR_ENCODING;
+    }
+    return validate_signatures(signature, single_signature_size,
+                               aggregator_change_threshold, &poa_data[44],
+                               identity_size, aggregator_number, message);
   }
-  // Assuming the witness is in WitnessArgs structure, we are doing some
-  // shortcuts here to support bigger witness.
-  if (readed_len < 20) {
-    DEBUG("Invalid witness length!");
-    return ERROR_ENCODING;
-  }
-  uint32_t lock_length = *((uint32_t *)(&witness[16]));
-  if (readed_len < 20 + lock_length) {
-    DEBUG("Witness lock part is far tooooo long!");
-    return ERROR_ENCODING;
-  }
-  // The lock field in WitnessArgs for current PoA script, contains a variable
-  // length signature.
-  const uint8_t *signature = &witness[20];
-  size_t signature_size = lock_length;
-  size_t remaining_offset = 20 + lock_length;
 
   // Check that current aggregator is indeed due to issuing new block.
   uint64_t last_round_initial_subtime = *((uint64_t *)last_subblock_info);
@@ -422,29 +519,8 @@ int main() {
     }
   }
 
-  // Different from our current scripts, this PoA script will actually skip
-  // the signature part when hashing for signing message, instead of filling the
-  // signature with all zeros.
-  blake2b_state message_ctx;
-  blake2b_init(&message_ctx, 32);
-  blake2b_update(&message_ctx, witness, 22);
-  // If we have loaded some witness parts that are after the signature, we will
-  // try to use them.
-  if (remaining_offset < readed_len) {
-    blake2b_update(&message_ctx, &witness[remaining_offset],
-                   readed_len - remaining_offset);
-    remaining_offset = readed_len;
-  }
-  if (remaining_offset < len) {
-    ret = load_and_hash_witness(&message_ctx, remaining_offset, 0,
-                                CKB_SOURCE_GROUP_INPUT);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-  }
-
   return validate_signature(
-      code_hash, hash_type, signature, signature_size,
+      signature, signature_size,
       &poa_data[44 + current_aggregator_index * identity_size], identity_size,
-      &message_ctx);
+      message);
 }
