@@ -319,6 +319,20 @@ int main() {
   {
     blake2b_state message_ctx;
     blake2b_init(&message_ctx, 32);
+    // Hash current transaction first.
+    // TODO: look into the possibility of leveraging open transactions.
+    unsigned char tx_hash[32];
+    len = 32;
+    ret = ckb_load_tx_hash(tx_hash, &len, 0);
+    if (ret != CKB_SUCCESS) {
+      DEBUG("Error loading transaction hash");
+      return ret;
+    }
+    if (len != 32) {
+      DEBUG("Transaction hash is not 32 bytes!");
+      return ERROR_TRANSACTION;
+    }
+    blake2b_update(&message_ctx, tx_hash, 32);
     blake2b_update(&message_ctx, witness, 22);
     // If we have loaded some witness parts that are after the signature, we
     // will try to use them.
