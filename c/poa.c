@@ -30,7 +30,9 @@
 #include "ckb_dlfcn.h"
 #include "ckb_syscalls.h"
 
-#define BUFFER_SIZE 32768
+#define SCRIPT_BUFFER_SIZE 128
+#define POA_BUFFER_SIZE 16384
+#define SIGNATURE_WITNESS_BUFFER_SIZE 32768
 #define ONE_BATCH_SIZE 32768
 #define CODE_SIZE (256 * 1024)
 #define PREFILLED_DATA_SIZE (1024 * 1024)
@@ -151,6 +153,45 @@ int validate_signature(const uint8_t *code_hash, uint8_t hash_type,
   return CKB_SUCCESS;
 }
 
+int look_for_poa_cell(const uint8_t *code_hash, uint8_t hash_type,
+                      size_t source, size_t *index) {
+  size_t current = 0;
+  size_t field =
+      (hash_type == 1) ? CKB_CELL_FIELD_TYPE_HASH : CKB_CELL_FIELD_DATA_HASH;
+  size_t found_index = SIZE_MAX;
+  int running = 1;
+  while ((running == 1) && (current < SIZE_MAX)) {
+    uint64_t len = 32;
+    uint8_t hash[32];
+
+    int ret = ckb_load_cell_by_field(hash, &len, 0, current, source, field);
+    switch (ret) {
+      case CKB_ITEM_MISSING:
+        break;
+      case CKB_SUCCESS:
+        if (memcmp(code_hash, hash, 32) == 0) {
+          // Found a match;
+          if (found_index != SIZE_MAX) {
+            // More than one PoA cell exists
+            DEBUG("Duplicate PoA cell!");
+            return ERROR_ENCODING;
+          }
+          found_index = current;
+        }
+        break;
+      default:
+        running = 0;
+        break;
+    }
+    current++;
+  }
+  if (found_index == SIZE_MAX) {
+    return CKB_INDEX_OUT_OF_BOUND;
+  }
+  *index = found_index;
+  return CKB_SUCCESS;
+}
+
 int main() {
   // TODO: cell termination.
   // One CKB transaction can only have one cell using current lock.
@@ -167,8 +208,8 @@ int main() {
     return ERROR_TRANSACTION;
   }
 
-  unsigned char script[BUFFER_SIZE];
-  len = BUFFER_SIZE;
+  unsigned char script[SCRIPT_BUFFER_SIZE];
+  len = SCRIPT_BUFFER_SIZE;
   ret = ckb_checked_load_script(script, &len, 0);
   if (ret != CKB_SUCCESS) {
     return ret;
@@ -184,40 +225,93 @@ int main() {
   mol_seg_t args_seg = MolReader_Script_get_args(&script_seg);
   mol_seg_t args_bytes_seg = MolReader_Bytes_raw_bytes(&args_seg);
 
-  if (args_bytes_seg.size < 44) {
-    DEBUG("Script args must at least be 44 bytes long!");
+  if (args_bytes_seg.size != 33) {
+    DEBUG("Script args must be 33 bytes long!");
     return ERROR_ENCODING;
   }
-  // TODO: another solution here, is that we can keep all those data
-  // within a cell(possibly with type ID), so they can be tweaked as long as
-  // all aggregator agrees. For example, subblock_intervals and
-  // subblocks_per_interval can be set to smaller values at first, then enlarge
-  // later depending on volume needs. Identities can also be changed as needed.
-  const uint8_t *code_hash = args_bytes_seg.ptr;
-  uint8_t hash_type = args_bytes_seg.ptr[32];
-  uint8_t identity_size = args_bytes_seg.ptr[33];
-  uint16_t aggregator_number = *((uint16_t *)(&args_bytes_seg.ptr[34]));
-  uint32_t subblock_intervals = *((uint32_t *)(&args_bytes_seg.ptr[36]));
-  uint32_t subblocks_per_interval = *((uint32_t *)(&args_bytes_seg.ptr[40]));
-  int interval_uses_seconds = (subblock_intervals & 0x80000000) != 0;
-  subblock_intervals &= 0x7FFFFFFF;
-  uint32_t data_info_offset = *((uint32_t *)(&args_bytes_seg.ptr[44]));
-  if (args_bytes_seg.size != 48 + identity_size * aggregator_number) {
-    DEBUG("Script args has invalid length!");
+
+  size_t input_poa_cell_index = SIZE_MAX;
+  ret = look_for_poa_cell(args_bytes_seg.ptr, args_bytes_seg.ptr[32],
+                          CKB_SOURCE_INPUT, &input_poa_cell_index);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  uint8_t input_poa_data[POA_BUFFER_SIZE];
+  uint64_t input_poa_len = POA_BUFFER_SIZE;
+  ret = ckb_load_cell_data(input_poa_data, &input_poa_len, 0,
+                           input_poa_cell_index, CKB_SOURCE_INPUT);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  if (input_poa_len > POA_BUFFER_SIZE) {
+    DEBUG("Input PoA cell is too large!");
+    return ERROR_ENCODING;
+  }
+  if (input_poa_len < 22 + 44) {
+    DEBUG("Input PoA cell is too small!");
+    return ERROR_ENCODING;
+  }
+
+  size_t output_poa_cell_index = SIZE_MAX;
+  ret = look_for_poa_cell(args_bytes_seg.ptr, args_bytes_seg.ptr[32],
+                          CKB_SOURCE_OUTPUT, &output_poa_cell_index);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  uint8_t output_poa_data[POA_BUFFER_SIZE];
+  uint64_t output_poa_len = POA_BUFFER_SIZE;
+  ret = ckb_load_cell_data(output_poa_data, &output_poa_len, 0,
+                           output_poa_cell_index, CKB_SOURCE_OUTPUT);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  if (output_poa_len > POA_BUFFER_SIZE) {
+    DEBUG("Output PoA cell is too large!");
+    return ERROR_ENCODING;
+  }
+  if (output_poa_len < 22 + 44) {
+    DEBUG("Output PoA cell is too small!");
+    return ERROR_ENCODING;
+  }
+
+  if ((input_poa_len != output_poa_len) ||
+      (memcmp(&input_poa_data[22], &output_poa_data[22], input_poa_len - 22) !=
+       0)) {
+    // TODO: implement PoA parameter updation, this should require signatures
+    // from most validators.
+    DEBUG("TODO: implement PoA parameter updation!");
+    return 123;
+  }
+
+  const uint8_t *poa_data = &input_poa_data[22];
+  const size_t poa_data_length = input_poa_len - 22;
+  const uint8_t *last_subblock_info = input_poa_data;
+  const uint8_t *current_subblock_info = output_poa_data;
+
+  const uint8_t *code_hash = poa_data;
+  uint8_t hash_type = poa_data[32];
+  uint8_t identity_size = poa_data[33];
+  uint8_t aggregator_number = poa_data[34];
+  int interval_uses_seconds = poa_data[35] == 1;
+  uint32_t subblock_intervals = *((uint32_t *)(&poa_data[36]));
+  uint32_t subblocks_per_interval = *((uint32_t *)(&poa_data[40]));
+  if (poa_data_length !=
+      44 + (size_t)identity_size * (size_t)aggregator_number) {
+    DEBUG("PoA data have invalid length!");
     return ERROR_ENCODING;
   }
 
   // Extract current aggregator index together with signature from the first
   // witness
-  uint8_t witness[BUFFER_SIZE];
-  len = BUFFER_SIZE;
+  uint8_t witness[SIGNATURE_WITNESS_BUFFER_SIZE];
+  len = SIGNATURE_WITNESS_BUFFER_SIZE;
   ret = ckb_load_witness(witness, &len, 0, 0, CKB_SOURCE_GROUP_INPUT);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
   size_t readed_len = len;
-  if (readed_len > BUFFER_SIZE) {
-    readed_len = BUFFER_SIZE;
+  if (readed_len > SIGNATURE_WITNESS_BUFFER_SIZE) {
+    readed_len = SIGNATURE_WITNESS_BUFFER_SIZE;
   }
   // Assuming the witness is in WitnessArgs structure, we are doing some
   // shortcuts here to support bigger witness.
@@ -237,33 +331,11 @@ int main() {
   size_t remaining_offset = 20 + lock_length;
 
   // Check that current aggregator is indeed due to issuing new block.
-  uint8_t last_subblock_info[22];
-  len = 22;
-  ret = ckb_load_cell_data(last_subblock_info, &len, data_info_offset, 0,
-                           CKB_SOURCE_GROUP_INPUT);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  if (len < 22) {
-    DEBUG("Invalid input block info!");
-    return ERROR_ENCODING;
-  }
   uint64_t last_round_initial_subtime = *((uint64_t *)last_subblock_info);
   uint64_t last_subblock_subtime = *((uint64_t *)(&last_subblock_info[8]));
   uint32_t last_block_index = *((uint32_t *)(&last_subblock_info[16]));
   uint16_t last_aggregator_index = *((uint16_t *)(&last_subblock_info[20]));
 
-  uint8_t current_subblock_info[22];
-  len = 22;
-  ret = ckb_load_cell_data(current_subblock_info, &len, data_info_offset, 0,
-                           CKB_SOURCE_GROUP_OUTPUT);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  if (len < 22) {
-    DEBUG("Invalid output block info!");
-    return ERROR_ENCODING;
-  }
   uint64_t current_round_initial_subtime = *((uint64_t *)current_subblock_info);
   uint64_t current_subblock_subtime =
       *((uint64_t *)(&current_subblock_info[8]));
@@ -373,6 +445,6 @@ int main() {
 
   return validate_signature(
       code_hash, hash_type, signature, signature_size,
-      &args_bytes_seg.ptr[48 + current_aggregator_index * identity_size],
-      identity_size, &message_ctx);
+      &poa_data[44 + current_aggregator_index * identity_size], identity_size,
+      &message_ctx);
 }
