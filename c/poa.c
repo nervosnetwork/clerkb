@@ -107,7 +107,7 @@ int load_and_hash_witness(blake2b_state *ctx, size_t start, size_t index,
   blake2b_update(ctx, temp, offset);
   while (offset < len) {
     uint64_t current_len = ONE_BATCH_SIZE;
-    ret = ckb_load_witness(temp, &current_len, offset, index, source);
+    ret = ckb_load_witness(temp, &current_len, start + offset, index, source);
     if (ret != CKB_SUCCESS) {
       return ret;
     }
@@ -320,7 +320,6 @@ int main() {
     blake2b_state message_ctx;
     blake2b_init(&message_ctx, 32);
     // Hash current transaction first.
-    // TODO: look into the possibility of leveraging open transactions.
     unsigned char tx_hash[32];
     len = 32;
     ret = ckb_load_tx_hash(tx_hash, &len, 0);
@@ -443,6 +442,9 @@ int main() {
     return ERROR_ENCODING;
   }
 
+  // TODO: current design forces one to include all PoA data in the transaction,
+  // even though a typical subblock might not modify them. We can further split
+  // PoA setup data and subblock info into 2 cells to reduce transaction size.
   PoAData poa_data;
   ret =
       parse_poa_data(&input_poa_data_buffer[22], input_poa_len - 22, &poa_data);
