@@ -61,10 +61,10 @@ typedef struct {
   uint32_t subblock_intervals;
   uint32_t subblocks_per_interval;
   const uint8_t *identities;
-} PoAData;
+} PoASetup;
 
-int parse_poa_data(const uint8_t *source_data, size_t source_length,
-                   PoAData *output) {
+int parse_poa_setup(const uint8_t *source_data, size_t source_length,
+                    PoASetup *output) {
   if (source_length < 44) {
     DEBUG("PoA data have invalid length!");
     return ERROR_ENCODING;
@@ -228,23 +228,21 @@ int validate_signature(const uint8_t *signature, size_t signature_size,
   return CKB_SUCCESS;
 }
 
-int look_for_poa_cell(const uint8_t *code_hash, uint8_t hash_type,
-                      size_t source, size_t *index) {
+int look_for_poa_cell(const uint8_t *type_hash, size_t source, size_t *index) {
   size_t current = 0;
-  size_t field =
-      (hash_type == 1) ? CKB_CELL_FIELD_TYPE_HASH : CKB_CELL_FIELD_DATA_HASH;
   size_t found_index = SIZE_MAX;
   int running = 1;
   while ((running == 1) && (current < SIZE_MAX)) {
     uint64_t len = 32;
     uint8_t hash[32];
 
-    int ret = ckb_load_cell_by_field(hash, &len, 0, current, source, field);
+    int ret = ckb_load_cell_by_field(hash, &len, 0, current, source,
+                                     CKB_CELL_FIELD_TYPE_HASH);
     switch (ret) {
       case CKB_ITEM_MISSING:
         break;
       case CKB_SUCCESS:
-        if (memcmp(code_hash, hash, 32) == 0) {
+        if (memcmp(type_hash, hash, 32) == 0) {
           // Found a match;
           if (found_index != SIZE_MAX) {
             // More than one PoA cell exists
@@ -393,189 +391,243 @@ int main() {
   mol_seg_t args_seg = MolReader_Script_get_args(&script_seg);
   mol_seg_t args_bytes_seg = MolReader_Bytes_raw_bytes(&args_seg);
 
-  if (args_bytes_seg.size != 33) {
-    DEBUG("Script args must be 33 bytes long!");
+  if (args_bytes_seg.size != 64) {
+    DEBUG("Script args must be 64 bytes long!");
     return ERROR_ENCODING;
   }
 
-  size_t input_poa_cell_index = SIZE_MAX;
-  ret = look_for_poa_cell(args_bytes_seg.ptr, args_bytes_seg.ptr[32],
-                          CKB_SOURCE_INPUT, &input_poa_cell_index);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  uint8_t input_poa_data_buffer[POA_BUFFER_SIZE];
-  uint64_t input_poa_len = POA_BUFFER_SIZE;
-  ret = ckb_load_cell_data(input_poa_data_buffer, &input_poa_len, 0,
-                           input_poa_cell_index, CKB_SOURCE_INPUT);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  if (input_poa_len > POA_BUFFER_SIZE) {
-    DEBUG("Input PoA cell is too large!");
-    return ERROR_ENCODING;
-  }
-  if (input_poa_len < 22 + 44) {
-    DEBUG("Input PoA cell is too small!");
-    return ERROR_ENCODING;
-  }
-
-  size_t output_poa_cell_index = SIZE_MAX;
-  ret = look_for_poa_cell(args_bytes_seg.ptr, args_bytes_seg.ptr[32],
-                          CKB_SOURCE_OUTPUT, &output_poa_cell_index);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  uint8_t output_poa_data_buffer[POA_BUFFER_SIZE];
-  uint64_t output_poa_len = POA_BUFFER_SIZE;
-  ret = ckb_load_cell_data(output_poa_data_buffer, &output_poa_len, 0,
-                           output_poa_cell_index, CKB_SOURCE_OUTPUT);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  if (output_poa_len > POA_BUFFER_SIZE) {
-    DEBUG("Output PoA cell is too large!");
-    return ERROR_ENCODING;
-  }
-  if (output_poa_len < 22 + 44) {
-    DEBUG("Output PoA cell is too small!");
-    return ERROR_ENCODING;
-  }
-
-  // TODO: current design forces one to include all PoA data in the transaction,
-  // even though a typical subblock might not modify them. We can further split
-  // PoA setup data and subblock info into 2 cells to reduce transaction size.
-  PoAData poa_data;
-  ret =
-      parse_poa_data(&input_poa_data_buffer[22], input_poa_len - 22, &poa_data);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  const uint8_t *last_subblock_info = input_poa_data_buffer;
-  const uint8_t *current_subblock_info = output_poa_data_buffer;
-
-  ret = initialize_signature_library(poa_data.code_hash, poa_data.hash_type);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-
-  if ((input_poa_len != output_poa_len) ||
-      (memcmp(&input_poa_data_buffer[22], &output_poa_data_buffer[22],
-              input_poa_len - 22) != 0)) {
-    PoAData new_poa_data;
-    ret = parse_poa_data(&output_poa_data_buffer[22], output_poa_len - 22,
-                         &new_poa_data);
+  size_t dep_poa_setup_cell_index = SIZE_MAX;
+  ret = look_for_poa_cell(args_bytes_seg.ptr, CKB_SOURCE_CELL_DEP,
+                          &dep_poa_setup_cell_index);
+  if (ret == CKB_SUCCESS) {
+    // Normal new blocks
+    uint8_t dep_poa_setup_buffer[POA_BUFFER_SIZE];
+    uint64_t len = POA_BUFFER_SIZE;
+    ret = ckb_load_cell_data(dep_poa_setup_buffer, &len, 0,
+                             dep_poa_setup_cell_index, CKB_SOURCE_CELL_DEP);
     if (ret != CKB_SUCCESS) {
       return ret;
     }
+    if (len > POA_BUFFER_SIZE) {
+      DEBUG("Dep PoA cell is too large!");
+      return ERROR_ENCODING;
+    }
+    PoASetup poa_setup;
+    ret = parse_poa_setup(dep_poa_setup_buffer, len, &poa_setup);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    ret =
+        initialize_signature_library(poa_setup.code_hash, poa_setup.hash_type);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+
+    size_t input_poa_data_cell_index = SIZE_MAX;
+    ret = look_for_poa_cell(&args_bytes_seg.ptr[32], CKB_SOURCE_INPUT,
+                            &input_poa_data_cell_index);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    uint8_t input_poa_data_buffer[22];
+    len = 22;
+    ret = ckb_load_cell_data(input_poa_data_buffer, &len, 0,
+                             input_poa_data_cell_index, CKB_SOURCE_INPUT);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    if (len != 22) {
+      DEBUG("Invalid input poa data cell!");
+      return ERROR_ENCODING;
+    }
+    const uint8_t *last_subblock_info = input_poa_data_buffer;
+
+    size_t output_poa_data_cell_index = SIZE_MAX;
+    ret = look_for_poa_cell(&args_bytes_seg.ptr[32], CKB_SOURCE_OUTPUT,
+                            &output_poa_data_cell_index);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    uint8_t output_poa_data_buffer[22];
+    len = 22;
+    ret = ckb_load_cell_data(output_poa_data_buffer, &len, 0,
+                             output_poa_data_cell_index, CKB_SOURCE_OUTPUT);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    if (len != 22) {
+      DEBUG("Invalid output poa data cell!");
+      return ERROR_ENCODING;
+    }
+    const uint8_t *current_subblock_info = output_poa_data_buffer;
+
+    // Check that current aggregator is indeed due to issuing new block.
+    uint64_t last_round_initial_subtime = *((uint64_t *)last_subblock_info);
+    uint64_t last_subblock_subtime = *((uint64_t *)(&last_subblock_info[8]));
+    uint32_t last_block_index = *((uint32_t *)(&last_subblock_info[16]));
+    uint16_t last_aggregator_index = *((uint16_t *)(&last_subblock_info[20]));
+
+    uint64_t current_round_initial_subtime =
+        *((uint64_t *)current_subblock_info);
+    uint64_t current_subblock_subtime =
+        *((uint64_t *)(&current_subblock_info[8]));
+    uint32_t current_subblock_index =
+        *((uint32_t *)(&current_subblock_info[16]));
+    uint16_t current_aggregator_index =
+        *((uint16_t *)(&current_subblock_info[20]));
+    if (current_aggregator_index >= poa_setup.aggregator_number) {
+      DEBUG("Invalid aggregator index!");
+      return ERROR_ENCODING;
+    }
+
+    // Since is used to ensure aggregators wait till the correct time.
+    uint64_t since = 0;
+    len = 8;
+    ret =
+        ckb_load_input_by_field(((uint8_t *)&since), &len, 0, 0,
+                                CKB_SOURCE_GROUP_INPUT, CKB_INPUT_FIELD_SINCE);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    if (len != 8) {
+      DEBUG("Invalid loading since!");
+      return ERROR_ENCODING;
+    }
+    if (poa_setup.interval_uses_seconds) {
+      if (since >> 56 != 0x40) {
+        DEBUG("PoA requires absolute timestamp since!");
+        return ERROR_ENCODING;
+      }
+    } else {
+      if (since >> 56 != 0) {
+        DEBUG("PoA requires absolute block number since!");
+        return ERROR_ENCODING;
+      }
+    }
+    since &= 0x00FFFFFFFFFFFFFF;
+    if (current_subblock_subtime != since) {
+      DEBUG("Invalid current time!");
+      return ERROR_ENCODING;
+    }
+
+    // There are 2 supporting modes:
+    // 1. An aggregator can issue as much new blocks as it wants as long as
+    // subblock_intervals requirement is met.
+    // 2. When the subblock_intervals duration has passed, the next aggregator
+    // should now be able to issue more blocks.
+    if (since < last_round_initial_subtime + poa_setup.subblock_intervals) {
+      // Current aggregator is issuing blocks
+      if (current_round_initial_subtime != last_round_initial_subtime) {
+        DEBUG("Invalid current round first timestamp!");
+        return ERROR_ENCODING;
+      }
+      // Timestamp must be non-decreasing
+      if (current_subblock_subtime < last_subblock_subtime) {
+        DEBUG("Invalid current timestamp!");
+        return ERROR_ENCODING;
+      }
+      if (current_aggregator_index != last_aggregator_index) {
+        DEBUG("Invalid aggregator!");
+        return ERROR_ENCODING;
+      }
+      if ((current_subblock_index != last_block_index + 1) ||
+          (current_subblock_index >= poa_setup.subblocks_per_interval)) {
+        DEBUG("Invalid block index");
+        return ERROR_ENCODING;
+      }
+    } else {
+      if (current_round_initial_subtime != current_subblock_subtime) {
+        DEBUG("Invalid current round first timestamp!");
+        return ERROR_ENCODING;
+      }
+      if (current_subblock_index != 0) {
+        DEBUG("Invalid block index");
+        return ERROR_ENCODING;
+      }
+      // Next aggregator in place
+      uint64_t duration = (((uint64_t)current_aggregator_index +
+                            (uint64_t)poa_setup.aggregator_number -
+                            (uint64_t)last_aggregator_index) %
+                           (uint64_t)poa_setup.aggregator_number) *
+                          ((uint64_t)poa_setup.subblock_intervals);
+      if (since < duration + last_round_initial_subtime) {
+        DEBUG("Invalid time!");
+        return ERROR_ENCODING;
+      }
+    }
+
+    return validate_signature(
+        signature, signature_size,
+        &poa_setup.identities[(size_t)current_aggregator_index *
+                              (size_t)poa_setup.identity_size],
+        poa_setup.identity_size, message);
+  } else if (ret == CKB_INDEX_OUT_OF_BOUND) {
+    // PoA consensus mode
+    size_t input_poa_setup_cell_index = SIZE_MAX;
+    ret = look_for_poa_cell(args_bytes_seg.ptr, CKB_SOURCE_INPUT,
+                            &input_poa_setup_cell_index);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    uint8_t input_poa_setup_buffer[POA_BUFFER_SIZE];
+    uint64_t input_poa_setup_len = POA_BUFFER_SIZE;
+    ret = ckb_load_cell_data(input_poa_setup_buffer, &input_poa_setup_len, 0,
+                             input_poa_setup_cell_index, CKB_SOURCE_INPUT);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    if (input_poa_setup_len > POA_BUFFER_SIZE) {
+      DEBUG("Input PoA cell is too large!");
+      return ERROR_ENCODING;
+    }
+    PoASetup poa_setup;
+    ret = parse_poa_setup(input_poa_setup_buffer, input_poa_setup_len,
+                          &poa_setup);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    ret =
+        initialize_signature_library(poa_setup.code_hash, poa_setup.hash_type);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+
+    size_t output_poa_setup_cell_index = SIZE_MAX;
+    ret = look_for_poa_cell(args_bytes_seg.ptr, CKB_SOURCE_OUTPUT,
+                            &output_poa_setup_cell_index);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    uint8_t output_poa_setup_buffer[POA_BUFFER_SIZE];
+    uint64_t output_poa_setup_len = POA_BUFFER_SIZE;
+    ret = ckb_load_cell_data(output_poa_setup_buffer, &output_poa_setup_len, 0,
+                             output_poa_setup_cell_index, CKB_SOURCE_OUTPUT);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    if (output_poa_setup_len > POA_BUFFER_SIZE) {
+      DEBUG("Output PoA cell is too large!");
+      return ERROR_ENCODING;
+    }
+    PoASetup new_poa_setup;
+    ret = parse_poa_setup(output_poa_setup_buffer, output_poa_setup_len,
+                          &new_poa_setup);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+
     size_t single_signature_size =
-        signature_size / (size_t)poa_data.aggregator_change_threshold;
-    if ((size_t)poa_data.aggregator_change_threshold * single_signature_size !=
+        signature_size / (size_t)poa_setup.aggregator_change_threshold;
+    if ((size_t)poa_setup.aggregator_change_threshold * single_signature_size !=
         signature_size) {
       DEBUG("Invalid signature length!");
       return ERROR_ENCODING;
     }
     return validate_signatures(signature, single_signature_size,
-                               poa_data.aggregator_change_threshold,
-                               poa_data.identities, poa_data.identity_size,
-                               poa_data.aggregator_number, message);
+                               poa_setup.aggregator_change_threshold,
+                               poa_setup.identities, poa_setup.identity_size,
+                               poa_setup.aggregator_number, message);
   }
-
-  // Check that current aggregator is indeed due to issuing new block.
-  uint64_t last_round_initial_subtime = *((uint64_t *)last_subblock_info);
-  uint64_t last_subblock_subtime = *((uint64_t *)(&last_subblock_info[8]));
-  uint32_t last_block_index = *((uint32_t *)(&last_subblock_info[16]));
-  uint16_t last_aggregator_index = *((uint16_t *)(&last_subblock_info[20]));
-
-  uint64_t current_round_initial_subtime = *((uint64_t *)current_subblock_info);
-  uint64_t current_subblock_subtime =
-      *((uint64_t *)(&current_subblock_info[8]));
-  uint32_t current_subblock_index = *((uint32_t *)(&current_subblock_info[16]));
-  uint16_t current_aggregator_index =
-      *((uint16_t *)(&current_subblock_info[20]));
-  if (current_aggregator_index >= poa_data.aggregator_number) {
-    DEBUG("Invalid aggregator index!");
-    return ERROR_ENCODING;
-  }
-
-  // Since is used to ensure aggregators wait till the correct time.
-  uint64_t since = 0;
-  len = 8;
-  ret = ckb_load_input_by_field(((uint8_t *)&since), &len, 0, 0,
-                                CKB_SOURCE_GROUP_INPUT, CKB_INPUT_FIELD_SINCE);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  if (len != 8) {
-    DEBUG("Invalid loading since!");
-    return ERROR_ENCODING;
-  }
-  if (poa_data.interval_uses_seconds) {
-    if (since >> 56 != 0x40) {
-      DEBUG("PoA requires absolute timestamp since!");
-      return ERROR_ENCODING;
-    }
-  } else {
-    if (since >> 56 != 0) {
-      DEBUG("PoA requires absolute block number since!");
-      return ERROR_ENCODING;
-    }
-  }
-  since &= 0x00FFFFFFFFFFFFFF;
-  if (current_subblock_subtime != since) {
-    DEBUG("Invalid current time!");
-    return ERROR_ENCODING;
-  }
-
-  // There are 2 supporting modes:
-  // 1. An aggregator can issue as much new blocks as it wants as long as
-  // subblock_intervals requirement is met.
-  // 2. When the subblock_intervals duration has passed, the next aggregator
-  // should now be able to issue more blocks.
-  if (since < last_round_initial_subtime + poa_data.subblock_intervals) {
-    // Current aggregator is issuing blocks
-    if (current_round_initial_subtime != last_round_initial_subtime) {
-      DEBUG("Invalid current round first timestamp!");
-      return ERROR_ENCODING;
-    }
-    // Timestamp must be non-decreasing
-    if (current_subblock_subtime < last_subblock_subtime) {
-      DEBUG("Invalid current timestamp!");
-      return ERROR_ENCODING;
-    }
-    if (current_aggregator_index != last_aggregator_index) {
-      DEBUG("Invalid aggregator!");
-      return ERROR_ENCODING;
-    }
-    if ((current_subblock_index != last_block_index + 1) ||
-        (current_subblock_index >= poa_data.subblocks_per_interval)) {
-      DEBUG("Invalid block index");
-      return ERROR_ENCODING;
-    }
-  } else {
-    if (current_round_initial_subtime != current_subblock_subtime) {
-      DEBUG("Invalid current round first timestamp!");
-      return ERROR_ENCODING;
-    }
-    if (current_subblock_index != 0) {
-      DEBUG("Invalid block index");
-      return ERROR_ENCODING;
-    }
-    // Next aggregator in place
-    uint64_t duration = (((uint64_t)current_aggregator_index +
-                          (uint64_t)poa_data.aggregator_number -
-                          (uint64_t)last_aggregator_index) %
-                         (uint64_t)poa_data.aggregator_number) *
-                        ((uint64_t)poa_data.subblock_intervals);
-    if (since < duration + last_round_initial_subtime) {
-      DEBUG("Invalid time!");
-      return ERROR_ENCODING;
-    }
-  }
-
-  return validate_signature(
-      signature, signature_size,
-      &poa_data.identities[(size_t)current_aggregator_index *
-                           (size_t)poa_data.identity_size],
-      poa_data.identity_size, message);
+  // Error
+  return ERROR_ENCODING;
 }
