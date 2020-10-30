@@ -399,6 +399,9 @@ int main() {
   size_t dep_poa_setup_cell_index = SIZE_MAX;
   ret = look_for_poa_cell(args_bytes_seg.ptr, CKB_SOURCE_CELL_DEP,
                           &dep_poa_setup_cell_index);
+  if (ret != CKB_INDEX_OUT_OF_BOUND && ret != CKB_SUCCESS) {
+    return ret;
+  }
   if (ret == CKB_SUCCESS) {
     // Normal new blocks
     uint8_t dep_poa_setup_buffer[POA_BUFFER_SIZE];
@@ -561,73 +564,69 @@ int main() {
         &poa_setup.identities[(size_t)current_aggregator_index *
                               (size_t)poa_setup.identity_size],
         poa_setup.identity_size, message);
-  } else if (ret == CKB_INDEX_OUT_OF_BOUND) {
-    // PoA consensus mode
-    size_t input_poa_setup_cell_index = SIZE_MAX;
-    ret = look_for_poa_cell(args_bytes_seg.ptr, CKB_SOURCE_INPUT,
-                            &input_poa_setup_cell_index);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-    uint8_t input_poa_setup_buffer[POA_BUFFER_SIZE];
-    uint64_t input_poa_setup_len = POA_BUFFER_SIZE;
-    ret = ckb_load_cell_data(input_poa_setup_buffer, &input_poa_setup_len, 0,
-                             input_poa_setup_cell_index, CKB_SOURCE_INPUT);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-    if (input_poa_setup_len > POA_BUFFER_SIZE) {
-      DEBUG("Input PoA cell is too large!");
-      return ERROR_ENCODING;
-    }
-    PoASetup poa_setup;
-    ret = parse_poa_setup(input_poa_setup_buffer, input_poa_setup_len,
-                          &poa_setup);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-    ret =
-        initialize_signature_library(poa_setup.code_hash, poa_setup.hash_type);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-
-    size_t output_poa_setup_cell_index = SIZE_MAX;
-    ret = look_for_poa_cell(args_bytes_seg.ptr, CKB_SOURCE_OUTPUT,
-                            &output_poa_setup_cell_index);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-    uint8_t output_poa_setup_buffer[POA_BUFFER_SIZE];
-    uint64_t output_poa_setup_len = POA_BUFFER_SIZE;
-    ret = ckb_load_cell_data(output_poa_setup_buffer, &output_poa_setup_len, 0,
-                             output_poa_setup_cell_index, CKB_SOURCE_OUTPUT);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-    if (output_poa_setup_len > POA_BUFFER_SIZE) {
-      DEBUG("Output PoA cell is too large!");
-      return ERROR_ENCODING;
-    }
-    PoASetup new_poa_setup;
-    ret = parse_poa_setup(output_poa_setup_buffer, output_poa_setup_len,
-                          &new_poa_setup);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-
-    size_t single_signature_size =
-        signature_size / (size_t)poa_setup.aggregator_change_threshold;
-    if ((size_t)poa_setup.aggregator_change_threshold * single_signature_size !=
-        signature_size) {
-      DEBUG("Invalid signature length!");
-      return ERROR_ENCODING;
-    }
-    return validate_signatures(signature, single_signature_size,
-                               poa_setup.aggregator_change_threshold,
-                               poa_setup.identities, poa_setup.identity_size,
-                               poa_setup.aggregator_number, message);
   }
-  // Error
-  return ERROR_ENCODING;
+  // PoA consensus mode
+  size_t input_poa_setup_cell_index = SIZE_MAX;
+  ret = look_for_poa_cell(args_bytes_seg.ptr, CKB_SOURCE_INPUT,
+                          &input_poa_setup_cell_index);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  uint8_t input_poa_setup_buffer[POA_BUFFER_SIZE];
+  uint64_t input_poa_setup_len = POA_BUFFER_SIZE;
+  ret = ckb_load_cell_data(input_poa_setup_buffer, &input_poa_setup_len, 0,
+                           input_poa_setup_cell_index, CKB_SOURCE_INPUT);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  if (input_poa_setup_len > POA_BUFFER_SIZE) {
+    DEBUG("Input PoA cell is too large!");
+    return ERROR_ENCODING;
+  }
+  PoASetup poa_setup;
+  ret =
+      parse_poa_setup(input_poa_setup_buffer, input_poa_setup_len, &poa_setup);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  ret = initialize_signature_library(poa_setup.code_hash, poa_setup.hash_type);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+
+  size_t output_poa_setup_cell_index = SIZE_MAX;
+  ret = look_for_poa_cell(args_bytes_seg.ptr, CKB_SOURCE_OUTPUT,
+                          &output_poa_setup_cell_index);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  uint8_t output_poa_setup_buffer[POA_BUFFER_SIZE];
+  uint64_t output_poa_setup_len = POA_BUFFER_SIZE;
+  ret = ckb_load_cell_data(output_poa_setup_buffer, &output_poa_setup_len, 0,
+                           output_poa_setup_cell_index, CKB_SOURCE_OUTPUT);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  if (output_poa_setup_len > POA_BUFFER_SIZE) {
+    DEBUG("Output PoA cell is too large!");
+    return ERROR_ENCODING;
+  }
+  PoASetup new_poa_setup;
+  ret = parse_poa_setup(output_poa_setup_buffer, output_poa_setup_len,
+                        &new_poa_setup);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+
+  size_t single_signature_size =
+      signature_size / (size_t)poa_setup.aggregator_change_threshold;
+  if ((size_t)poa_setup.aggregator_change_threshold * single_signature_size !=
+      signature_size) {
+    DEBUG("Invalid signature length!");
+    return ERROR_ENCODING;
+  }
+  return validate_signatures(signature, single_signature_size,
+                             poa_setup.aggregator_change_threshold,
+                             poa_setup.identities, poa_setup.identity_size,
+                             poa_setup.aggregator_number, message);
 }
