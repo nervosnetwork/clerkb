@@ -266,7 +266,6 @@ int look_for_poa_cell(const uint8_t *type_hash, size_t source, size_t *index) {
 }
 
 int main() {
-  // TODO: cell termination.
   // One CKB transaction can only have one cell using current lock.
   uint64_t len = 0;
   int ret = ckb_load_cell(NULL, &len, 0, 1, CKB_SOURCE_GROUP_INPUT);
