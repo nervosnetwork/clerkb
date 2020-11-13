@@ -95,14 +95,16 @@ int parse_poa_setup(const uint8_t *source_data, size_t source_length,
 }
 
 int load_and_hash_witness(blake2b_state *ctx, size_t start, size_t index,
-                          size_t source) {
+                          size_t source, int hash_length) {
   uint8_t temp[ONE_BATCH_SIZE];
   uint64_t len = ONE_BATCH_SIZE;
   int ret = ckb_load_witness(temp, &len, start, index, source);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  blake2b_update(ctx, (char *)&len, sizeof(uint64_t));
+  if (hash_length != 0) {
+    blake2b_update(ctx, (char *)&len, sizeof(uint64_t));
+  }
   uint64_t offset = (len > ONE_BATCH_SIZE) ? ONE_BATCH_SIZE : len;
   blake2b_update(ctx, temp, offset);
   while (offset < len) {
@@ -282,12 +284,13 @@ int main() {
 
   // Extract signature(s) from the first witness
   uint8_t witness[SIGNATURE_WITNESS_BUFFER_SIZE];
-  len = SIGNATURE_WITNESS_BUFFER_SIZE;
-  ret = ckb_load_witness(witness, &len, 0, 0, CKB_SOURCE_GROUP_INPUT);
+  uint64_t first_witness_len = SIGNATURE_WITNESS_BUFFER_SIZE;
+  ret = ckb_load_witness(witness, &first_witness_len, 0, 0,
+                         CKB_SOURCE_GROUP_INPUT);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  size_t readed_len = len;
+  size_t readed_len = first_witness_len;
   if (readed_len > SIGNATURE_WITNESS_BUFFER_SIZE) {
     readed_len = SIGNATURE_WITNESS_BUFFER_SIZE;
   }
@@ -329,7 +332,8 @@ int main() {
       return ERROR_TRANSACTION;
     }
     blake2b_update(&message_ctx, tx_hash, 32);
-    blake2b_update(&message_ctx, witness, 22);
+    blake2b_update(&message_ctx, (char *)&first_witness_len, sizeof(uint64_t));
+    blake2b_update(&message_ctx, witness, 20);
     // If we have loaded some witness parts that are after the signature, we
     // will try to use them.
     if (remaining_offset < readed_len) {
@@ -337,9 +341,9 @@ int main() {
                      readed_len - remaining_offset);
       remaining_offset = readed_len;
     }
-    if (remaining_offset < len) {
+    if (remaining_offset < first_witness_len) {
       ret = load_and_hash_witness(&message_ctx, remaining_offset, 0,
-                                  CKB_SOURCE_GROUP_INPUT);
+                                  CKB_SOURCE_GROUP_INPUT, 0);
       if (ret != CKB_SUCCESS) {
         return ret;
       }
@@ -348,7 +352,7 @@ int main() {
     size_t i = 1;
     while (1) {
       int ret =
-          load_and_hash_witness(&message_ctx, 0, i, CKB_SOURCE_GROUP_INPUT);
+          load_and_hash_witness(&message_ctx, 0, i, CKB_SOURCE_GROUP_INPUT, 1);
       if (ret == CKB_INDEX_OUT_OF_BOUND) {
         break;
       }
@@ -360,7 +364,7 @@ int main() {
     // Digest witnesses that not covered by inputs
     i = ckb_calculate_inputs_len();
     while (1) {
-      int ret = load_and_hash_witness(&message_ctx, 0, i, CKB_SOURCE_INPUT);
+      int ret = load_and_hash_witness(&message_ctx, 0, i, CKB_SOURCE_INPUT, 1);
       if (ret == CKB_INDEX_OUT_OF_BOUND) {
         break;
       }

@@ -1,0 +1,22 @@
+{
+  "name": "clerkb-lumos-integrator",
+  "version": "0.1.0",
+  "description": "Integrator between clerkb and lumos",
+  "main": "index.js",
+  "license": "MIT",
+  "private": false,
+  "dependencies": {
+    "@ckb-lumos/common-scripts": "^0.13.1",
+    "@ckb-lumos/config-manager": "^0.13.1",
+    "@ckb-lumos/helpers": "^0.13.1",
+    "@types/node": "^14.14.7"
+  },
+  "devDependencies": {
+    "prettier": "^2.1.2",
+    "typescript": "^3.9.5"
+  },
+  "scripts": {
+    "build": "tsc",
+    "fmt": "prettier --write index.ts package.json"
+  }
+}
