@@ -1,0 +1,69 @@
+{
+  "$id": "https://nervos.org/json-schemas/ckb/poa-config",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["poa_setup"],
+  "additionalProperties": true,
+  "properties": {
+    "poa_setup": {
+      "$ref": "#/definitions/PoASetup"
+    }
+  },
+  "definitions": {
+    "Hash": {
+      "type": "string",
+      "pattern": "^0x([0-9a-fA-F][0-9a-fA-F])*$",
+      "maxLength": 66,
+      "minLength": 66
+    },
+    "Uint8": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 255
+    },
+    "Uint16": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "PoASetup": {
+      "type": "object",
+      "required": ["code_hash", "hash_type", "interval_uses_seconds", "identities",
+                   "aggregator_number", "aggregator_change_threshold",
+                   "subblock_intervals", "subblocks_per_interval"],
+      "additionalProperties": false,
+      "properties": {
+        "code_hash": {
+          "$ref": "#/definitions/Hash"
+        },
+        "hash_type": {
+          "enum": ["data", "type"]
+        },
+        "interval_uses_seconds": {
+          "type": "boolean"
+        },
+        "identities": {
+          "type": "array",
+          "maxItems": 255,
+          "items": {
+            "type": "string",
+            "pattern": "^0x([0-9a-fA-F][0-9a-fA-F])*$",
+            "minLength": 4
+          }
+        },
+        "aggregator_number": {
+          "$ref": "#/definitions/Uint8"
+        },
+        "aggregator_change_threshold": {
+          "$ref": "#/definitions/Uint8"
+        },
+        "subblock_intervals": {
+          "$ref": "#/definitions/Uint16"
+        },
+        "subblocks_per_interval": {
+          "$ref": "#/definitions/Uint16"
+        }
+      }
+    }
+  }
+}
