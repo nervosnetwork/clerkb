@@ -32,6 +32,7 @@
         "code_hash",
         "hash_type",
         "interval_uses_seconds",
+        "identity_size",
         "identities",
         "aggregator_change_threshold",
         "subblock_intervals",
@@ -47,6 +48,9 @@
         },
         "interval_uses_seconds": {
           "type": "boolean"
+        },
+        "identity_size": {
+          "$ref": "#/definitions/Uint8"
         },
         "identities": {
           "type": "array",
