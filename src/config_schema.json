@@ -24,7 +24,7 @@
     "Uint16": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 65535
+      "maximum": 4294967295
     },
     "PoASetup": {
       "type": "object",
@@ -61,10 +61,10 @@
           "$ref": "#/definitions/Uint8"
         },
         "subblock_intervals": {
-          "$ref": "#/definitions/Uint16"
+          "$ref": "#/definitions/Uint32"
         },
         "subblocks_per_interval": {
-          "$ref": "#/definitions/Uint16"
+          "$ref": "#/definitions/Uint32"
         }
       }
     }
