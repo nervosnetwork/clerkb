@@ -33,7 +33,6 @@
         "hash_type",
         "interval_uses_seconds",
         "identities",
-        "aggregator_number",
         "aggregator_change_threshold",
         "subblock_intervals",
         "subblocks_per_interval"
@@ -57,9 +56,6 @@
             "pattern": "^0x([0-9a-fA-F][0-9a-fA-F])*$",
             "minLength": 4
           }
-        },
-        "aggregator_number": {
-          "$ref": "#/definitions/Uint8"
         },
         "aggregator_change_threshold": {
           "$ref": "#/definitions/Uint8"
