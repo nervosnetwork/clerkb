@@ -144,8 +144,12 @@ export class PoAGenerator {
     });
     if (ownerCells.count() === 0) {
       const ownerCell = await this._queryOwnerCell(script);
-      txSkeleton = pushAndFix(txSkeleton, ownerCell, "inputs");
-      txSkeleton = pushAndFix(txSkeleton, ownerCell, "outputs");
+      txSkeleton = txSkeleton.update("inputs", (inputs) =>
+        inputs.push(ownerCell)
+      );
+      txSkeleton = txSkeleton.update("outputs", (outputs) =>
+        outputs.push(ownerCell)
+      );
     }
     return txSkeleton;
   }
