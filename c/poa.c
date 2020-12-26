@@ -352,7 +352,7 @@ int main() {
 
     // There are 2 supporting modes:
     // 1. An aggregator can issue as much new blocks as it wants as long as
-    // subblock_intervals requirement is met.
+    // subblock_intervals and subblocks_per_interval requirement is met.
     // 2. When the subblock_intervals duration has passed, the next aggregator
     // should now be able to issue more blocks.
     if (since < last_round_initial_subtime + poa_setup.subblock_intervals) {
