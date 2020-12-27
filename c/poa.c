@@ -389,11 +389,14 @@ int main() {
         return ERROR_ENCODING;
       }
       // Next aggregator in place
-      uint64_t duration = (((uint64_t)current_aggregator_index +
-                            (uint64_t)poa_setup.aggregator_number -
-                            (uint64_t)last_aggregator_index) %
-                           (uint64_t)poa_setup.aggregator_number) *
-                          ((uint64_t)poa_setup.subblock_intervals);
+      uint64_t steps = (((uint64_t)current_aggregator_index +
+                         (uint64_t)poa_setup.aggregator_number -
+                         (uint64_t)last_aggregator_index) %
+                        (uint64_t)poa_setup.aggregator_number);
+      if (steps == 0) {
+        steps = (uint64_t)poa_setup.aggregator_number;
+      }
+      uint64_t duration = steps * ((uint64_t)poa_setup.subblock_intervals);
       if (since < duration + last_round_initial_subtime) {
         DEBUG("Invalid time!");
         return ERROR_ENCODING;
