@@ -2,9 +2,16 @@
   "name": "clerkb-lumos-integrator",
   "version": "0.1.0",
   "description": "Integrator between clerkb and lumos",
-  "main": "index.js",
   "license": "MIT",
   "private": false,
+  "main": "lib/index.js",
+  "types": "src/index.ts",
+  "files": [
+    "lib",
+    "src",
+    "build/poa",
+    "build/state"
+  ],
   "dependencies": {
     "@ckb-lumos/common-scripts": "^0.14.2-rc2",
     "@ckb-lumos/config-manager": "^0.14.2-rc2",

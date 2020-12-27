@@ -1,8 +1,10 @@
 import { Reader } from "ckb-js-toolkit";
 import {
+  core,
   since,
   utils,
   Cell,
+  CellDep,
   Hash,
   HashType,
   Indexer,
@@ -10,6 +12,8 @@ import {
   HexString,
   Script,
 } from "@ckb-lumos/base";
+import { common } from "@ckb-lumos/common-scripts";
+import { getConfig, initializeConfig } from "@ckb-lumos/config-manager";
 import { TransactionSkeletonType, addressToScript } from "@ckb-lumos/helpers";
 import {
   PoAData,
@@ -35,13 +39,17 @@ function pushAndFix(
   });
 }
 
+initializeConfig();
+
 export class PoAGenerator {
   ckbAddress: string;
   indexer: Indexer;
+  cellDeps: CellDep[];
 
-  constructor(ckbAddress: string, indexer: Indexer) {
+  constructor(ckbAddress: string, indexer: Indexer, cellDeps: CellDep[]) {
     this.ckbAddress = ckbAddress;
     this.indexer = indexer;
+    this.cellDeps = cellDeps;
   }
 
   async shouldIssueNewBlock(
@@ -51,7 +59,7 @@ export class PoAGenerator {
     const { poaData, poaSetup, aggregatorIndex } = await this._queryPoAInfos(
       tipCell
     );
-    const medianTime = BigInt(medianTimeHex);
+    const medianTime = BigInt(medianTimeHex) / 1000n;
     if (
       medianTime <
         poaData.round_initial_subtime + BigInt(poaSetup.subblock_intervals) &&
@@ -87,6 +95,11 @@ export class PoAGenerator {
       script,
       scriptHash,
     } = await this._queryPoAInfos(txSkeleton.get("inputs").get(0)!);
+    for (const cellDep of this.cellDeps) {
+      txSkeleton = txSkeleton.update("cellDeps", (cellDeps) =>
+        cellDeps.push(cellDep)
+      );
+    }
     txSkeleton = txSkeleton.update("cellDeps", (cellDeps) =>
       cellDeps.push({
         out_point: poaSetupCell.out_point!,
@@ -94,7 +107,11 @@ export class PoAGenerator {
       })
     );
     txSkeleton = pushAndFix(txSkeleton, poaDataCell, "inputs");
-    const medianTime = BigInt(medianTimeHex);
+    // Dummy witness to hold the place for input cell.
+    txSkeleton = txSkeleton.update("witnesses", (witnesses) =>
+      witnesses.push("0x")
+    );
+    const medianTime = BigInt(medianTimeHex) / 1000n;
     let newPoAData: PoAData;
     if (
       medianTime <
@@ -144,12 +161,7 @@ export class PoAGenerator {
     });
     if (ownerCells.count() === 0) {
       const ownerCell = await this._queryOwnerCell(script);
-      txSkeleton = txSkeleton.update("inputs", (inputs) =>
-        inputs.push(ownerCell)
-      );
-      txSkeleton = txSkeleton.update("outputs", (outputs) =>
-        outputs.push(ownerCell)
-      );
+      txSkeleton = await common.setupInputCell(txSkeleton, ownerCell);
     }
     return txSkeleton;
   }
@@ -201,7 +213,7 @@ export class PoAGenerator {
 
   async _queryPoaStateCell(args: Hash) {
     const query = {
-      lock: {
+      type: {
         code_hash:
           "0x00000000000000000000000000000000000000000000000000545950455f4944",
         hash_type: "type" as HashType,

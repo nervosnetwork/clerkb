@@ -25,7 +25,7 @@ export interface Config {
 }
 
 export function readConfig(filename: string): Config {
-  return parseConfig(readFileSync("test.json", "utf8"));
+  return parseConfig(readFileSync(filename, "utf8"));
 }
 
 export function parseConfig(configData: string): Config {

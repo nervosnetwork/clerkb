@@ -21,7 +21,7 @@
       "minimum": 1,
       "maximum": 255
     },
-    "Uint16": {
+    "Uint32": {
       "type": "integer",
       "minimum": 1,
       "maximum": 4294967295

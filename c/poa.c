@@ -159,21 +159,29 @@ int validate_single_signing(const uint8_t *identity, size_t identity_size) {
   return ERROR_ENCODING;
 }
 
-int look_for_poa_cell(const uint8_t *type_hash, size_t source, size_t *index) {
+static const uint8_t type_id_script_prefix[53] = {
+    0x55, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00,
+    0x00, 0x31, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x54, 0x59, 0x50,
+    0x45, 0x5f, 0x49, 0x44, 0x01, 0x20, 0x00, 0x00, 0x00};
+
+int look_for_poa_cell(const uint8_t *type_id, size_t source, size_t *index) {
   size_t current = 0;
   size_t found_index = SIZE_MAX;
   int running = 1;
   while ((running == 1) && (current < SIZE_MAX)) {
-    uint64_t len = 32;
-    uint8_t hash[32];
+    uint64_t len = 85;
+    uint8_t script[85];
 
-    int ret = ckb_load_cell_by_field(hash, &len, 0, current, source,
-                                     CKB_CELL_FIELD_TYPE_HASH);
+    int ret = ckb_load_cell_by_field(script, &len, 0, current, source,
+                                     CKB_CELL_FIELD_TYPE);
     switch (ret) {
       case CKB_ITEM_MISSING:
         break;
       case CKB_SUCCESS:
-        if (memcmp(type_hash, hash, 32) == 0) {
+        if (len == 85 && memcmp(type_id_script_prefix, script, 53) == 0 &&
+            memcmp(type_id, &script[53], 32) == 0) {
           // Found a match;
           if (found_index != SIZE_MAX) {
             // More than one PoA cell exists

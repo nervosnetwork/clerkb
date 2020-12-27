@@ -1,2 +1,2 @@
-import * as config from "./config";
-import * as generator from "./generator";
+export * as config from "./config";
+export * as generator from "./generator";
