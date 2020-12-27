@@ -51,8 +51,6 @@ typedef struct {
   const uint8_t *_source_data;
   size_t _source_length;
 
-  const uint8_t *code_hash;
-  uint8_t hash_type;
   int interval_uses_seconds;
   uint8_t identity_size;
   uint8_t aggregator_number;
@@ -64,22 +62,20 @@ typedef struct {
 
 int parse_poa_setup(const uint8_t *source_data, size_t source_length,
                     PoASetup *output) {
-  if (source_length < 44) {
+  if (source_length < 12) {
     DEBUG("PoA data have invalid length!");
     return ERROR_ENCODING;
   }
   output->_source_data = source_data;
   output->_source_length = source_length;
 
-  output->code_hash = source_data;
-  output->hash_type = source_data[32] & 1;
-  output->interval_uses_seconds = ((source_data[32] >> 1) & 1) == 1;
-  output->identity_size = source_data[33];
-  output->aggregator_number = source_data[34];
-  output->aggregator_change_threshold = source_data[35];
-  output->subblock_intervals = *((uint32_t *)(&source_data[36]));
-  output->subblocks_per_interval = *((uint32_t *)(&source_data[40]));
-  output->identities = &source_data[44];
+  output->interval_uses_seconds = (source_data[0] & 1) == 1;
+  output->identity_size = source_data[1];
+  output->aggregator_number = source_data[2];
+  output->aggregator_change_threshold = source_data[3];
+  output->subblock_intervals = *((uint32_t *)(&source_data[4]));
+  output->subblocks_per_interval = *((uint32_t *)(&source_data[8]));
+  output->identities = &source_data[12];
 
   if (output->identity_size > IDENTITY_SIZE) {
     DEBUG("Invalid identity size!");
@@ -90,7 +86,7 @@ int parse_poa_setup(const uint8_t *source_data, size_t source_length,
     return ERROR_ENCODING;
   }
   if (source_length !=
-      44 + (size_t)output->identity_size * (size_t)output->aggregator_number) {
+      12 + (size_t)output->identity_size * (size_t)output->aggregator_number) {
     DEBUG("PoA data have invalid length!");
     return ERROR_ENCODING;
   }

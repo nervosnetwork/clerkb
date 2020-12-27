@@ -3,11 +3,12 @@
 // Lock script used for PoA Setup cell and PoA Data cell.
 //
 // It only tests if current transaction has a cell with matching lock.
-// During initialization phase, the main PoA cell, setup cell and data cell should
-// be created together. The detailed steps are:
+// During initialization phase, the main PoA cell, setup cell and data cell
+// should be created together. The detailed steps are:
 //
 // * PoA cell is set to PoA lock implemented in poa.c
-// * PoA Setup cell and PoA Data cell are set to State Lock implemented in state.c
+// * PoA Setup cell and PoA Data cell are set to State Lock implemented in
+// state.c
 // * Generate type ID 1 for PoA Setup cell
 // * Generate type ID 2 for PoA Data cell
 // * Use type ID 1 and 2 to fill in PoA lock in the main PoA cell

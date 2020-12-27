@@ -29,8 +29,6 @@
     "PoASetup": {
       "type": "object",
       "required": [
-        "code_hash",
-        "hash_type",
         "interval_uses_seconds",
         "identity_size",
         "identities",
@@ -40,12 +38,6 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "code_hash": {
-          "$ref": "#/definitions/Hash"
-        },
-        "hash_type": {
-          "enum": ["data", "type"]
-        },
         "interval_uses_seconds": {
           "type": "boolean"
         },

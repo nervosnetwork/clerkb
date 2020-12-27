@@ -2,7 +2,7 @@ TARGET := riscv64-unknown-elf
 CC := $(TARGET)-gcc
 LD := $(TARGET)-gcc
 OBJCOPY := $(TARGET)-objcopy
-CFLAGS := -fPIC -O3 -fvisibility=hidden -fno-builtin-memcmp -I c/deps/ckb-c-stdlib -I c/deps/ckb-c-stdlib/molecule -I c -Wall -Werror -Wno-nonnull -Wno-nonnull-compare -Wno-unused-function -g
+CFLAGS := -fPIC -O3 -fvisibility=hidden -fno-builtin-memcmp -I c/deps/ckb-c-stdlib -I c/deps/ckb-c-stdlib/molecule -I c -Wall -Werror -Wno-nonnull -Wno-nonnull-compare -Wno-unused-function -g -DENABLE_DEBUG_MODE
 LDFLAGS := -Wl,-static -fdata-sections -ffunction-sections -Wl,--gc-sections
 
 # docker pull nervos/ckb-riscv-gnu-toolchain:bionic-20190702

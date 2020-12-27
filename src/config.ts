@@ -5,8 +5,6 @@ import { readFileSync } from "fs";
 import schema from "./config_schema.json";
 
 export interface PoASetup {
-  code_hash: HexString;
-  hash_type: "type" | "data";
   identity_size: number;
   interval_uses_seconds: boolean;
   identities: Array<HexString>;
@@ -68,34 +66,29 @@ export function validateConfig(config: Config): Config {
 }
 
 export function parsePoASetup(buffer: ArrayBuffer): PoASetup {
-  if (buffer.byteLength < 44) {
+  if (buffer.byteLength < 12) {
     throw new Error("Invalid length!");
   }
   const bufferArray = new Uint8Array(buffer);
   const view = new DataView(buffer);
-  const identitySize = view.getUint8(33);
-  const aggregatorNumber = view.getUint8(34);
-  if (buffer.byteLength !== 44 + identitySize * aggregatorNumber) {
+  const identitySize = view.getUint8(1);
+  const aggregatorNumber = view.getUint8(2);
+  if (buffer.byteLength !== 12 + identitySize * aggregatorNumber) {
     throw new Error("Invalid length!");
   }
-  const codeHashBuffer = new ArrayBuffer(32);
-  const codeHashArray = new Uint8Array(codeHashBuffer);
-  codeHashArray.set(bufferArray.slice(0, 32));
   const identities = [];
   for (let i = 0; i < aggregatorNumber; i++) {
     const identityBuffer = new ArrayBuffer(identitySize);
     const identityArray = new Uint8Array(identityBuffer);
-    const offset = 44 + i * identitySize;
+    const offset = 12 + i * identitySize;
     identityArray.set(bufferArray.slice(offset, offset + identitySize));
     identities.push(new Reader(identityBuffer).serializeJson());
   }
   const setup: PoASetup = {
-    code_hash: new Reader(codeHashBuffer).serializeJson(),
-    hash_type: (view.getUint8(32) & 1) === 1 ? "type" : "data",
-    interval_uses_seconds: ((view.getUint8(32) >> 1) & 1) === 1,
-    aggregator_change_threshold: view.getUint8(35),
-    subblock_intervals: view.getUint32(36, true),
-    subblocks_per_interval: view.getUint32(40, true),
+    interval_uses_seconds: (view.getUint8(0) & 1) === 1,
+    aggregator_change_threshold: view.getUint8(3),
+    subblock_intervals: view.getUint32(4, true),
+    subblocks_per_interval: view.getUint32(8, true),
     identity_size: identitySize,
     identities: identities,
   };
@@ -104,32 +97,21 @@ export function parsePoASetup(buffer: ArrayBuffer): PoASetup {
 
 export function serializePoASetup(poaSetup: PoASetup): ArrayBuffer {
   const length =
-    44 +
+    12 +
     poaSetup.identities.length * new Reader(poaSetup.identities[0]).length();
   const buffer = new ArrayBuffer(length);
   const view = new DataView(buffer);
   const uint8array = new Uint8Array(buffer);
-  uint8array.set(
-    new Uint8Array(new Reader(poaSetup.code_hash).toArrayBuffer()),
-    0
-  );
-  let flag = 0;
-  if (poaSetup.hash_type === "type") {
-    flag |= 1;
-  }
-  if (poaSetup.interval_uses_seconds) {
-    flag |= 2;
-  }
-  view.setUint8(32, flag);
-  view.setUint8(33, poaSetup.identity_size);
-  view.setUint8(34, poaSetup.identities.length);
-  view.setUint8(35, poaSetup.aggregator_change_threshold);
-  view.setUint32(36, poaSetup.subblock_intervals, true);
-  view.setUint32(40, poaSetup.subblocks_per_interval, true);
+  view.setUint8(0, poaSetup.interval_uses_seconds ? 1 : 0);
+  view.setUint8(1, poaSetup.identity_size);
+  view.setUint8(2, poaSetup.identities.length);
+  view.setUint8(3, poaSetup.aggregator_change_threshold);
+  view.setUint32(4, poaSetup.subblock_intervals, true);
+  view.setUint32(8, poaSetup.subblocks_per_interval, true);
   for (let i = 0; i < poaSetup.identities.length; i++) {
     uint8array.set(
       new Uint8Array(new Reader(poaSetup.identities[i]).toArrayBuffer()),
-      44 + i * poaSetup.identity_size
+      12 + i * poaSetup.identity_size
     );
   }
   return buffer;
