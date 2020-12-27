@@ -45,11 +45,13 @@ export class PoAGenerator {
   ckbAddress: string;
   indexer: Indexer;
   cellDeps: CellDep[];
+  roundStartSubtime: bigint | undefined;
 
   constructor(ckbAddress: string, indexer: Indexer, cellDeps: CellDep[]) {
     this.ckbAddress = ckbAddress;
     this.indexer = indexer;
     this.cellDeps = cellDeps;
+    this.roundStartSubtime = undefined;
   }
 
   async shouldIssueNewBlock(
@@ -60,23 +62,29 @@ export class PoAGenerator {
       tipCell
     );
     const medianTime = BigInt(medianTimeHex) / 1000n;
-    if (
-      medianTime <
-        poaData.round_initial_subtime + BigInt(poaSetup.subblock_intervals) &&
-      poaData.subblock_index + 1 < poaSetup.subblocks_per_interval
-    ) {
-      return "YesIfFull";
+    if (this.roundStartSubtime) {
+      if (
+        medianTime <
+          this.roundStartSubtime + BigInt(poaSetup.subblock_intervals) &&
+        poaData.subblock_index + 1 < poaSetup.subblocks_per_interval
+      ) {
+        return "YesIfFull";
+      }
     }
-    const steps =
+    let steps =
       (aggregatorIndex +
         poaSetup.identities.length -
         poaData.aggregator_index) %
       poaSetup.identities.length;
+    if (steps === 0) {
+      steps = poaSetup.identities.length;
+    }
+    const initialTime = this.roundStartSubtime || poaData.round_initial_subtime;
     if (
       medianTime >=
-      poaData.round_initial_subtime +
-        BigInt(poaSetup.subblock_intervals) * BigInt(steps)
+      initialTime + BigInt(poaSetup.subblock_intervals) * BigInt(steps)
     ) {
+      this.roundStartSubtime = medianTime;
       return "Yes";
     }
     return "No";
