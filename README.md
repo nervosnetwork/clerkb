@@ -1,6 +1,6 @@
 # clerkb
 
-Clerkb provides [Proof of Authority](https://en.wikipedia.org/wiki/Proof_of_authority) mechanism for [Nervos CKB](https://www.nervos.org/). It is designed as 2 components working together:
+Clerkb implements [Proof of Authority](https://en.wikipedia.org/wiki/Proof_of_authority) mechanism on [Nervos CKB](https://www.nervos.org/) for layer 2 solutions. It is designed as 2 components working together:
 
 * 2 smart contracts used as lock scripts on CKB to validate logic on chain.
 * A TypeScript based module for integrating PoA into your generator code.
