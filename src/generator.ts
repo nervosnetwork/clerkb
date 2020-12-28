@@ -58,17 +58,18 @@ export class PoAGenerator {
     medianTimeHex: HexNumber,
     tipCell: Cell
   ): Promise<State> {
+    const medianTime = BigInt(medianTimeHex) / 1000n;
     const { poaData, poaSetup, aggregatorIndex } = await this._queryPoAInfos(
       tipCell
     );
-    const medianTime = BigInt(medianTimeHex) / 1000n;
     if (this.roundStartSubtime) {
       if (
         medianTime <
-          this.roundStartSubtime + BigInt(poaSetup.subblock_intervals) &&
-        poaData.subblock_index + 1 < poaSetup.subblocks_per_interval
+        this.roundStartSubtime + BigInt(poaSetup.subblock_intervals)
       ) {
         return "YesIfFull";
+      } else {
+        this.roundStartSubtime = undefined;
       }
     }
     let steps =
@@ -79,7 +80,7 @@ export class PoAGenerator {
     if (steps === 0) {
       steps = poaSetup.identities.length;
     }
-    const initialTime = this.roundStartSubtime || poaData.round_initial_subtime;
+    const initialTime = poaData.round_initial_subtime;
     if (
       medianTime >=
       initialTime + BigInt(poaSetup.subblock_intervals) * BigInt(steps)
