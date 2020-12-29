@@ -29,16 +29,16 @@
     "PoASetup": {
       "type": "object",
       "required": [
-        "interval_uses_seconds",
+        "round_interval_uses_seconds",
         "identity_size",
         "identities",
         "aggregator_change_threshold",
-        "subblock_intervals",
-        "subblocks_per_interval"
+        "round_intervals",
+        "subblocks_per_round"
       ],
       "additionalProperties": false,
       "properties": {
-        "interval_uses_seconds": {
+        "round_interval_uses_seconds": {
           "type": "boolean"
         },
         "identity_size": {
@@ -56,10 +56,10 @@
         "aggregator_change_threshold": {
           "$ref": "#/definitions/Uint8"
         },
-        "subblock_intervals": {
+        "round_intervals": {
           "$ref": "#/definitions/Uint32"
         },
-        "subblocks_per_interval": {
+        "subblocks_per_round": {
           "$ref": "#/definitions/Uint32"
         }
       }

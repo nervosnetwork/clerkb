@@ -46,12 +46,19 @@ export class PoAGenerator {
   indexer: Indexer;
   cellDeps: CellDep[];
   roundStartSubtime: bigint | undefined;
+  logger: (message: string) => void;
 
-  constructor(ckbAddress: string, indexer: Indexer, cellDeps: CellDep[]) {
+  constructor(
+    ckbAddress: string,
+    indexer: Indexer,
+    cellDeps: CellDep[],
+    logger?: (message: string) => void
+  ) {
     this.ckbAddress = ckbAddress;
     this.indexer = indexer;
     this.cellDeps = cellDeps;
     this.roundStartSubtime = undefined;
+    this.logger = logger || ((_message) => undefined);
   }
 
   async shouldIssueNewBlock(
@@ -63,10 +70,10 @@ export class PoAGenerator {
       tipCell
     );
     if (this.roundStartSubtime) {
-      if (
-        medianTime <
-        this.roundStartSubtime + BigInt(poaSetup.subblock_intervals)
-      ) {
+      const remaining =
+        this.roundStartSubtime + BigInt(poaSetup.round_intervals) - medianTime;
+      if (remaining > 0) {
+        this.logger(`Aggregator in round, remaining time: ${remaining}`);
         return "YesIfFull";
       } else {
         this.roundStartSubtime = undefined;
@@ -81,10 +88,12 @@ export class PoAGenerator {
       steps = poaSetup.identities.length;
     }
     const initialTime = poaData.round_initial_subtime;
-    if (
-      medianTime >=
-      initialTime + BigInt(poaSetup.subblock_intervals) * BigInt(steps)
-    ) {
+    const nextStartTime =
+      initialTime + BigInt(poaSetup.round_intervals) * BigInt(steps);
+    this.logger(
+      `On chain index: ${poaData.aggregator_index}, steps: ${steps}, initial time: ${initialTime}, next start time: ${nextStartTime}`
+    );
+    if (medianTime >= nextStartTime) {
       this.roundStartSubtime = medianTime;
       return "Yes";
     }
@@ -124,8 +133,8 @@ export class PoAGenerator {
     let newPoAData: PoAData;
     if (
       medianTime <
-        poaData.round_initial_subtime + BigInt(poaSetup.subblock_intervals) &&
-      poaData.subblock_index + 1 < poaSetup.subblocks_per_interval
+        poaData.round_initial_subtime + BigInt(poaSetup.round_intervals) &&
+      poaData.subblock_index + 1 < poaSetup.subblocks_per_round
     ) {
       // New block in current round
       newPoAData = {
@@ -195,7 +204,7 @@ export class PoAGenerator {
     const poaSetup = parsePoASetup(
       new Reader(poaSetupCell.data).toArrayBuffer()
     );
-    if (!poaSetup.interval_uses_seconds) {
+    if (!poaSetup.round_interval_uses_seconds) {
       throw new Error("TODO: implement block interval PoA");
     }
     let script = addressToScript(this.ckbAddress);

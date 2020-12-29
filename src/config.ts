@@ -6,11 +6,11 @@ import schema from "./config_schema.json";
 
 export interface PoASetup {
   identity_size: number;
-  interval_uses_seconds: boolean;
+  round_interval_uses_seconds: boolean;
   identities: Array<HexString>;
   aggregator_change_threshold: number;
-  subblock_intervals: number;
-  subblocks_per_interval: number;
+  round_intervals: number;
+  subblocks_per_round: number;
 }
 
 export interface PoAData {
@@ -85,10 +85,10 @@ export function parsePoASetup(buffer: ArrayBuffer): PoASetup {
     identities.push(new Reader(identityBuffer).serializeJson());
   }
   const setup: PoASetup = {
-    interval_uses_seconds: (view.getUint8(0) & 1) === 1,
+    round_interval_uses_seconds: (view.getUint8(0) & 1) === 1,
     aggregator_change_threshold: view.getUint8(3),
-    subblock_intervals: view.getUint32(4, true),
-    subblocks_per_interval: view.getUint32(8, true),
+    round_intervals: view.getUint32(4, true),
+    subblocks_per_round: view.getUint32(8, true),
     identity_size: identitySize,
     identities: identities,
   };
@@ -102,12 +102,12 @@ export function serializePoASetup(poaSetup: PoASetup): ArrayBuffer {
   const buffer = new ArrayBuffer(length);
   const view = new DataView(buffer);
   const uint8array = new Uint8Array(buffer);
-  view.setUint8(0, poaSetup.interval_uses_seconds ? 1 : 0);
+  view.setUint8(0, poaSetup.round_interval_uses_seconds ? 1 : 0);
   view.setUint8(1, poaSetup.identity_size);
   view.setUint8(2, poaSetup.identities.length);
   view.setUint8(3, poaSetup.aggregator_change_threshold);
-  view.setUint32(4, poaSetup.subblock_intervals, true);
-  view.setUint32(8, poaSetup.subblocks_per_interval, true);
+  view.setUint32(4, poaSetup.round_intervals, true);
+  view.setUint32(8, poaSetup.subblocks_per_round, true);
   for (let i = 0; i < poaSetup.identities.length; i++) {
     uint8array.set(
       new Uint8Array(new Reader(poaSetup.identities[i]).toArrayBuffer()),

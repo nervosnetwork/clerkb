@@ -51,12 +51,12 @@ typedef struct {
   const uint8_t *_source_data;
   size_t _source_length;
 
-  int interval_uses_seconds;
+  int round_interval_uses_seconds;
   uint8_t identity_size;
   uint8_t aggregator_number;
   uint8_t aggregator_change_threshold;
-  uint32_t subblock_intervals;
-  uint32_t subblocks_per_interval;
+  uint32_t round_intervals;
+  uint32_t subblocks_per_round;
   const uint8_t *identities;
 } PoASetup;
 
@@ -69,12 +69,12 @@ int parse_poa_setup(const uint8_t *source_data, size_t source_length,
   output->_source_data = source_data;
   output->_source_length = source_length;
 
-  output->interval_uses_seconds = (source_data[0] & 1) == 1;
+  output->round_interval_uses_seconds = (source_data[0] & 1) == 1;
   output->identity_size = source_data[1];
   output->aggregator_number = source_data[2];
   output->aggregator_change_threshold = source_data[3];
-  output->subblock_intervals = *((uint32_t *)(&source_data[4]));
-  output->subblocks_per_interval = *((uint32_t *)(&source_data[8]));
+  output->round_intervals = *((uint32_t *)(&source_data[4]));
+  output->subblocks_per_round = *((uint32_t *)(&source_data[8]));
   output->identities = &source_data[12];
 
   if (output->identity_size > IDENTITY_SIZE) {
@@ -337,7 +337,7 @@ int main() {
       DEBUG("Invalid loading since!");
       return ERROR_ENCODING;
     }
-    if (poa_setup.interval_uses_seconds) {
+    if (poa_setup.round_interval_uses_seconds) {
       if (since >> 56 != 0x40) {
         DEBUG("PoA requires absolute timestamp since!");
         return ERROR_ENCODING;
@@ -356,10 +356,10 @@ int main() {
 
     // There are 2 supporting modes:
     // 1. An aggregator can issue as much new blocks as it wants as long as
-    // subblock_intervals and subblocks_per_interval requirement is met.
-    // 2. When the subblock_intervals duration has passed, the next aggregator
+    // round_intervals and subblocks_per_round requirement is met.
+    // 2. When the round_intervals duration has passed, the next aggregator
     // should now be able to issue more blocks.
-    if (since < last_round_initial_subtime + poa_setup.subblock_intervals) {
+    if (since < last_round_initial_subtime + poa_setup.round_intervals) {
       // Current aggregator is issuing blocks
       if (current_round_initial_subtime != last_round_initial_subtime) {
         DEBUG("Invalid current round first timestamp!");
@@ -375,7 +375,7 @@ int main() {
         return ERROR_ENCODING;
       }
       if ((current_subblock_index != last_block_index + 1) ||
-          (current_subblock_index >= poa_setup.subblocks_per_interval)) {
+          (current_subblock_index >= poa_setup.subblocks_per_round)) {
         DEBUG("Invalid block index");
         return ERROR_ENCODING;
       }
@@ -396,7 +396,7 @@ int main() {
       if (steps == 0) {
         steps = (uint64_t)poa_setup.aggregator_number;
       }
-      uint64_t duration = steps * ((uint64_t)poa_setup.subblock_intervals);
+      uint64_t duration = steps * ((uint64_t)poa_setup.round_intervals);
       if (since < duration + last_round_initial_subtime) {
         DEBUG("Invalid time!");
         return ERROR_ENCODING;

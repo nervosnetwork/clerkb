@@ -14,18 +14,20 @@ A `PoASetup` construct specifies the behavior of clerkb:
 ```typescript
 export interface PoASetup {
   identity_size: number;
-  interval_uses_seconds: boolean;
+  round_interval_uses_seconds: boolean;
   identities: Array<HexString>;
   aggregator_change_threshold: number;
-  subblock_intervals: number;
-  subblocks_per_interval: number;
+  round_intervals: number;
+  subblocks_per_round: number;
 }
 ```
 
 One is free to specify the configurations here:
 
-* The number of aggregators used in PoA. Each aggregator is denoted by one entry in `identitites` array. Clerkb is designed to support at most 255 aggregators.
-* Each aggregator can issue layer 2 blocks(represented as CKB transactions) in its round. A round has a time limit denoted by `subblock_intervals`. The limit can be expressed either as timestamps, or block numbers.
-* `identitites` determine the order in which aggregator gets its round. When the round for one aggregator expires, the next aggregator denoted by `identitites` array gets the round. When the last aggregator in `identitites` expires its round, clerkb restarts with the first aggregator in `identitites` array.
-* Each aggregator can issue as many as `subblocks_per_interval` layer 2 blocks(represented as CKB transactions) in each round.
-* The contents of `identitites` array, are actually script hashes, or prefixes of script hashes(denoted by `identity_size`). Here clerkb uses the same technical as owner locks in [sUDT](https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0025-simple-udt/0025-simple-udt.md): an aggregator can unlock a cell governed by the PoA lock, as long as current transaction has an input cell, whose lock script hash is identical to the entry specified in `identitites` array.
+* The number of aggregators is determined by `identities` array. Clerkb is designed to support at most 255 aggregators.
+* Each item in `identities` array contains the identity for one unique aggregator. The identity is represented as lock script hashes, or prefix of lock script hashes. Clerkb leverages the same technique as owner locks in [sUDT](https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0025-simple-udt/0025-simple-udt.md): an aggregator can unlock a cell governed by the PoA lock, as long as current transaction has an input cell, whose lock script hash is identical to the aggregator identity specified in `identitites` array.
+* Each aggregator can issue L2 blocks in its own designated `round`. All the aggregators take turns having their own rounds. This is denoted by the order in `identitites` array. When the last aggregator in `identitites` array expires its round, the first aggregator in the array starts its round again.
+* A round is capped in 2 ways:
+    + `subblocks_per_round` determines how many layer 2 blocks can be issued per round
+    + `round_intervals` determines the interval length of a round. Based on the value of `round_interval_uses_seconds`, the interval can either be expressed using seconds, or layer 1 blocks.
+* The PoA setup can also be upgraded dynamically on chain. At least agreements(expressed via owner lock technique) from `aggregator_change_threshold` aggregators must be collected to update the PoA setup.
