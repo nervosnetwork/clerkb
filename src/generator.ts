@@ -72,7 +72,7 @@ export class PoAGenerator {
     if (this.roundStartSubtime) {
       const remaining =
         this.roundStartSubtime + BigInt(poaSetup.round_intervals) - medianTime;
-      if (remaining > 0) {
+      if (remaining > 0n) {
         this.logger(`Aggregator in round, remaining time: ${remaining}`);
         return "YesIfFull";
       } else {
@@ -90,10 +90,11 @@ export class PoAGenerator {
     const initialTime = poaData.round_initial_subtime;
     const nextStartTime =
       initialTime + BigInt(poaSetup.round_intervals) * BigInt(steps);
+    const waitTime = nextStartTime - medianTime;
     this.logger(
-      `On chain index: ${poaData.aggregator_index}, steps: ${steps}, initial time: ${initialTime}, next start time: ${nextStartTime}`
+      `On chain index: ${poaData.aggregator_index}, steps: ${steps}, initial time: ${initialTime}, next start time: ${nextStartTime}, wait time: ${waitTime}`
     );
-    if (medianTime >= nextStartTime) {
+    if (waitTime <= 0n) {
       this.roundStartSubtime = medianTime;
       return "Yes";
     }
