@@ -61,6 +61,10 @@ export class PoAGenerator {
     this.logger = logger || ((_message) => undefined);
   }
 
+  async cancelIssueBlock(): Promise<void> {
+    this.roundStartSubtime = undefined;
+  }
+
   async shouldIssueNewBlock(
     medianTimeHex: HexNumber,
     tipCell: Cell
