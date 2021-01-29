@@ -2,7 +2,7 @@ TARGET := riscv64-unknown-elf
 CC := $(TARGET)-gcc
 LD := $(TARGET)-gcc
 OBJCOPY := $(TARGET)-objcopy
-CFLAGS := -fPIC -O3 -fvisibility=hidden -fno-builtin-memcmp -I deps/ckb-c-stdlib -I deps/ckb-c-stdlib/molecule -I c -Wall -Werror -Wno-nonnull -Wno-nonnull-compare -Wno-unused-function -g -DENABLE_DEBUG_MODE
+CFLAGS := -fPIC -O3 -fvisibility=hidden -fno-builtin-memcmp -I deps/ckb-c-stdlib -I deps/ckb-c-stdlib/molecule -I c -Wall -Werror -Wno-nonnull -Wno-nonnull-compare -Wno-unused-function -g
 LDFLAGS := -Wl,-static -fdata-sections -ffunction-sections -Wl,--gc-sections
 
 ENVIRONMENT := debug

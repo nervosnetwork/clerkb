@@ -18,8 +18,12 @@ jobs:
     - uses: actions/checkout@v2
     - name: Update submodules
       run: git submodule update --init
+    - name: Install dependencies
+      run: sudo apt-get install -y gcovr
     - name: Build smart contracts
       run: make all-via-docker
+    - name: Check smart contract hashes
+      run: ./scripts/check_binary_hashes.sh
     - name: Run tests
       run: make test
     - name: Run coverage

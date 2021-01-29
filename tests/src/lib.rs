@@ -18,8 +18,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-#[cfg(test)]
-mod hash_tests;
+// Hash tests here shall be enabled on demand.
+// #[cfg(test)]
+// mod hash_tests;
 #[cfg(test)]
 mod poa_tests;
 #[cfg(test)]
