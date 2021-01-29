@@ -22,6 +22,7 @@ BUILDER_DOCKER := nervos/ckb-riscv-gnu-toolchain@sha256:7b168b4b109a0f741078a71b
 all: build/$(ENVIRONMENT)/poa build/$(ENVIRONMENT)/state
 
 all-via-docker:
+	mkdir -p build/$(ENVIRONMENT)
 	docker run --rm -v `pwd`:/code ${BUILDER_DOCKER} bash -c "cd /code && make"
 
 simulators: build/$(ENVIRONMENT)/poa_sim build/$(ENVIRONMENT)/state_sim
