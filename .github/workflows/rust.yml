@@ -1,0 +1,24 @@
+name: Rust
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build smart contracts
+      run: make all-via-docker
+    - name: Run tests
+      run: make test
+    - name: Run coverage
+      run: make coverage
