@@ -16,6 +16,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - name: Update submodules
+      run: git submodule update --init
     - name: Build smart contracts
       run: make all-via-docker
     - name: Run tests
