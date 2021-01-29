@@ -9,8 +9,8 @@
   "files": [
     "lib",
     "src",
-    "build/poa",
-    "build/state"
+    "build/poa.strip",
+    "build/state.strip"
   ],
   "dependencies": {
     "@ckb-lumos/common-scripts": "^0.14.2-rc2",
