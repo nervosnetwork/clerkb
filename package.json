@@ -25,6 +25,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "fmt": "prettier --write \"src/**/*.{ts,json}\" package.json"
+    "fmt": "prettier --write \"src/**/*.{ts,json}\" package.json",
+    "prepublishOnly": "scripts/check_binary_hashes.sh"
   }
 }
