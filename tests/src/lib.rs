@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 #[cfg(test)]
+mod hash_tests;
+#[cfg(test)]
 mod poa_tests;
 #[cfg(test)]
 mod state_tests;
